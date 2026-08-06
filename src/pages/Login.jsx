@@ -1,115 +1,115 @@
-const db = globalThis.__B44_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
-
-import React, { useState } from "react";
-import { Link } from "react-router-dom";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { LogIn, Mail, Lock, Loader2 } from "lucide-react";
-import AuthLayout from "@/components/AuthLayout";
-import GoogleIcon from "@/components/GoogleIcon";
-import { safeReturnTo } from "@/lib/authReturnTo";
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { LogIn, User, Lock, Loader2 } from 'lucide-react';
+import AuthLayout from '@/components/AuthLayout';
+import { getAccount, isLoggedIn, pbkdf2, setLoggedIn, saveAccount } from '@/lib/localAuth';
+import { accountLookupRemote, syncExchange, applySyncedRecords } from '@/lib/cloudSync';
+import { useLocalAuth } from '@/lib/LocalAuthContext';
 
 export default function Login() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const navigate = useNavigate();
+  const { refresh } = useLocalAuth();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  // Post-login destination (e.g. the MCP OAuth consent page sends users here
-  // with returnTo so the grant flow can resume). Same-origin paths only.
-  const returnTo = safeReturnTo();
+
+  useEffect(() => {
+    if (isLoggedIn()) navigate('/', { replace: true });
+  }, [navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
+    setError('');
+    const u = username.trim().toLowerCase();
+    if (!u || !password) { setError('enter your username and password'); return; }
     setLoading(true);
     try {
-      await db.auth.loginViaEmailPassword(email, password);
-      window.location.href = returnTo;
+      // device already has this account → verify locally (works offline)
+      const local = getAccount();
+      if (local && local.username === u) {
+        const hash = await pbkdf2(password, local.salt);
+        if (hash !== local.hash) { setError('wrong password'); return; }
+        setLoggedIn();
+        refresh();
+        navigate('/', { replace: true });
+        return;
+      }
+
+      // new device → fetch salt from the cloud and pull this account's data
+      // (requires internet for this one step, then it's offline again)
+      if (!navigator.onLine) {
+        setError('no account on this device — connect to the internet to sign in');
+        return;
+      }
+      const lookup = await accountLookupRemote(u);
+      if (lookup && lookup.error) { setError(lookup.error); return; }
+      if (!lookup || !lookup.exists) { setError('no account found with that username'); return; }
+
+      const hash = await pbkdf2(password, lookup.salt);
+      const res = await syncExchange(u, hash, []);
+      if (res && res.error) {
+        setError(res.error === 'unauthorized' ? 'wrong password' : res.error);
+        return;
+      }
+      if (res && Array.isArray(res.records)) applySyncedRecords(res.records);
+      saveAccount({ username: u, salt: lookup.salt, hash, updated_date: Date.now() });
+      setLoggedIn();
+      refresh();
+      navigate('/', { replace: true });
     } catch (err) {
-      setError(err.message || "Invalid email or password");
+      setError((err && err.message) || 'sign in failed');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGoogle = () => {
-    db.auth.loginWithProvider("google", returnTo);
-  };
-
   return (
     <AuthLayout
       icon={LogIn}
-      title="Welcome back"
-      subtitle="Log in to your account"
+      title="welcome back"
+      subtitle="sign in to retrolist"
       footer={
         <>
-          Don't have an account?{" "}
-          <Link
-            to={"/register" + (returnTo !== "/" ? "?returnTo=" + encodeURIComponent(returnTo) : "")}
-            className="text-primary font-medium hover:underline"
-          >
-            Create one
+          new here?{' '}
+          <Link to="/register" className="text-primary font-medium hover:underline">
+            create an account
           </Link>
         </>
       }
     >
-      <Button
-        variant="outline"
-        className="w-full h-12 text-sm font-medium mb-6"
-        onClick={handleGoogle}
-      >
-        <GoogleIcon className="w-5 h-5 mr-2" />
-        Continue with Google
-      </Button>
-
-      <div className="relative mb-6">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-border" />
-        </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-card px-3 text-muted-foreground">or</span>
-        </div>
-      </div>
-
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+        <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm lowercase">
           {error}
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="username">username</Label>
           <div className="relative">
-            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
+            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
             <Input
-              id="email"
-              type="email"
-              autoComplete="email"
+              id="username"
               autoFocus
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="pl-10 h-12"
+              placeholder="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="pl-10 h-12 lowercase"
               required
             />
           </div>
         </div>
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="password">Password</Label>
-            <Link to="/forgot-password" className="text-xs text-primary hover:underline">
-              Forgot password?
-            </Link>
-          </div>
+          <Label htmlFor="password">password</Label>
           <div className="relative">
             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
             <Input
               id="password"
               type="password"
-              autoComplete="current-password"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -122,10 +122,10 @@ export default function Login() {
           {loading ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Logging in...
+              signing in…
             </>
           ) : (
-            "Log in"
+            'sign in'
           )}
         </Button>
       </form>

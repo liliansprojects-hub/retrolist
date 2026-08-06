@@ -4,9 +4,10 @@ import {
   Share2, Moon, Sun, Monitor, Type, AlertCircle, LogOut, ChevronRight,
 } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
-import { useAuth } from '@/lib/AuthContext';
+import { useLocalAuth } from '@/lib/LocalAuthContext';
 import { getProfile, saveProfile, deleteAccount, createShare } from '@/lib/store';
-import { purgeCloudData } from '@/lib/sync';
+import { deleteAccountRemote } from '@/lib/cloudSync';
+import { getAccount } from '@/lib/localAuth';
 import ColorPicker from '@/components/ColorPicker';
 import ImageUpload from '@/components/ImageUpload';
 import ShareDialog from '@/components/ShareDialog';
@@ -20,7 +21,7 @@ const FONTS = [
 
 export default function Settings() {
   const { theme, changeTheme, accent, changeAccent, font, changeFont } = useTheme();
-  const { logout } = useAuth();
+  const { logout } = useLocalAuth();
   const navigate = useNavigate();
   const [profile, setProfile] = useState(getProfile());
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -45,16 +46,17 @@ export default function Settings() {
   const handleDeleteAccount = async () => {
     setDeleting(true);
     try {
-      await purgeCloudData();
+      const account = getAccount();
+      if (account) {
+        await deleteAccountRemote(account.username, account.hash);
+      }
     } catch (e) {
-      console.error('cloud purge failed, continuing with local delete', e);
+      console.error('cloud delete failed, continuing with local delete', e);
     }
     try {
       deleteAccount();
     } catch {}
-    try {
-      await logout();
-    } catch {}
+    logout();
     window.location.href = '/login';
   };
 

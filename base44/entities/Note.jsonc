@@ -6,6 +6,10 @@
       "type": "string",
       "description": "local storage record id used for matching during sync"
     },
+    "username": {
+      "type": "string",
+      "description": "local account username this record belongs to (data partition key)"
+    },
     "kind": {
       "type": "string",
       "enum": [
@@ -14,7 +18,8 @@
         "event",
         "map_folder",
         "period",
-        "profile"
+        "profile",
+        "account"
       ],
       "default": "folder",
       "description": "which local data collection this record belongs to"
