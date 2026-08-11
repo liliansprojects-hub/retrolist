@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getAccount, isLoggedIn, clearSession } from './localAuth';
+import { getAccount, isLoggedIn, clearSession, migrateLegacyData } from './localAuth';
 
 const LocalAuthContext = createContext();
 
@@ -11,7 +11,12 @@ export function LocalAuthProvider({ children }) {
 
   const refresh = useCallback(() => {
     const account = getAccount();
-    setUser(account && isLoggedIn() ? { username: account.username } : null);
+    if (account && isLoggedIn()) {
+      migrateLegacyData(account.username);
+      setUser({ username: account.username });
+    } else {
+      setUser(null);
+    }
     setLoading(false);
   }, []);
 

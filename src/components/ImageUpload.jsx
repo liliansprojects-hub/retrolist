@@ -3,6 +3,9 @@ import { Camera, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import CropModal from './CropModal';
 
+// single "choose photo" source — the in-app camera / "take photo" option was
+// removed everywhere; all photos are picked from the library and stored
+// offline as data URLs.
 export default function ImageUpload({
   value,
   onChange,
@@ -15,7 +18,6 @@ export default function ImageUpload({
   enableCrop = true,
 }) {
   const inputRef = useRef(null);
-  const cameraRef = useRef(null);
   const [rawSrc, setRawSrc] = useState(null);
 
   const handleFile = (e) => {
@@ -57,54 +59,37 @@ export default function ImageUpload({
     <div>
       {label && <span className="text-xs font-medium text-muted-foreground lowercase block mb-2">{label}</span>}
       {value ? (
-        <div className={cn('relative rounded-2xl overflow-hidden', className)}>
-          <img src={value} alt="" className="w-full h-full object-cover" />
+        <div className={cn('relative', className)}>
+          <img src={value} alt="" className={cn('w-full h-full object-cover', round ? 'rounded-full' : 'rounded-2xl')} />
           <button
             onClick={() => onChange(null)}
-            className="touch-44 absolute top-2 right-2 w-8 h-8 rounded-full bg-background/80 backdrop-blur flex items-center justify-center"
+            className="touch-44 absolute -top-1.5 -right-1.5 w-7 h-7 rounded-full bg-background border border-border shadow flex items-center justify-center z-10"
+            aria-label="remove"
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => inputRef.current?.click()}
-            className="touch-44 absolute bottom-2 right-2 px-3 h-8 rounded-full bg-background/80 backdrop-blur flex items-center gap-1.5 text-xs font-medium lowercase"
+            className="touch-44 absolute -bottom-1.5 -right-1.5 w-8 h-8 rounded-full bg-foreground text-background shadow flex items-center justify-center z-10"
+            aria-label="change"
           >
-            <Camera className="w-3.5 h-3.5" />
-            change
+            <Camera className="w-4 h-4" />
           </button>
         </div>
       ) : (
-        <div className={cn('grid grid-cols-2 gap-2', className)}>
-          <button
-            onClick={() => inputRef.current?.click()}
-            className="touch-44 min-h-[80px] rounded-2xl border-2 border-dashed border-border flex flex-col items-center justify-center gap-1.5 text-muted-foreground"
-          >
-            <Camera className="w-5 h-5" />
-            <span className="text-xs lowercase">photo library</span>
-          </button>
-          <button
-            onClick={() => cameraRef.current?.click()}
-            className="touch-44 min-h-[80px] rounded-2xl border-2 border-dashed border-border flex flex-col items-center justify-center gap-1.5 text-muted-foreground"
-          >
-            <Camera className="w-5 h-5" />
-            <span className="text-xs lowercase">take photo</span>
-          </button>
-        </div>
+        <button
+          onClick={() => inputRef.current?.click()}
+          className={cn('touch-44 w-full min-h-[80px] rounded-2xl border-2 border-dashed border-border flex flex-col items-center justify-center gap-1.5 text-muted-foreground', className)}
+        >
+          <Camera className="w-5 h-5" />
+          <span className="text-xs lowercase">choose photo</span>
+        </button>
       )}
       {/* gallery / file picker */}
       <input
         ref={inputRef}
         type="file"
         accept="image/*"
-        onChange={handleFile}
-        className="hidden"
-      />
-      {/* camera capture */}
-      <input
-        ref={cameraRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
         onChange={handleFile}
         className="hidden"
       />

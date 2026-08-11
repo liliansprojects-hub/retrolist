@@ -2,6 +2,8 @@ const db = globalThis.__B44_DB__ || { auth:{ isAuthenticated: async()=>false, me
 
 // shared helpers for the local-account sync functions.
 // accounts are stored as Note records (kind: 'account') partitioned by username.
+// the base44 client is created per-request via createClientFromRequest and
+// passed in by each function — no global stub.
 
 export async function findAccount(base44, username) {
   const records = await db.asServiceRole.entities.Note.filter({

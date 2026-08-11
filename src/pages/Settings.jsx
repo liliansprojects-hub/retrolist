@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Share2, Moon, Sun, Monitor, Type, AlertCircle, LogOut, ChevronRight,
+  Share2, Moon, Sun, Monitor, Type, AlertCircle, LogOut, ChevronRight, Play, Bell, Check,
 } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 import { useLocalAuth } from '@/lib/LocalAuthContext';
-import { getProfile, saveProfile, deleteAccount, createShare } from '@/lib/store';
+import { getProfile, saveProfile, deleteAccount, createShare, getSettings, saveSettings } from '@/lib/store';
 import { deleteAccountRemote } from '@/lib/cloudSync';
-import { getAccount } from '@/lib/localAuth';
+import { getAccount, clearAccount, pbkdf2 } from '@/lib/localAuth';
 import ColorPicker from '@/components/ColorPicker';
 import ImageUpload from '@/components/ImageUpload';
 import ShareDialog from '@/components/ShareDialog';
+import MyFiles from '@/components/MyFiles';
 import { cn } from '@/lib/utils';
+import { SOUNDS, VIBRATIONS, preview } from '@/lib/alarmAudio';
 
 const FONTS = [
   { id: 'nunito', label: 'nunito', style: { fontFamily: 'Nunito, sans-serif' } },
@@ -24,8 +26,14 @@ export default function Settings() {
   const { logout } = useLocalAuth();
   const navigate = useNavigate();
   const [profile, setProfile] = useState(getProfile());
+  const [settings, setSettings] = useState(getSettings());
+  const [notifStatus, setNotifStatus] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported');
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [delStep, setDelStep] = useState(0);
+  const [delPassword, setDelPassword] = useState('');
+  const [delConfirm, setDelConfirm] = useState(false);
+  const [delError, setDelError] = useState('');
   const [shareOpen, setShareOpen] = useState(false);
 
   useEffect(() => {
@@ -37,6 +45,16 @@ export default function Settings() {
   const update = (data) => {
     saveProfile(data);
     setProfile(getProfile());
+  };
+
+  const updateSettings = (s) => {
+    saveSettings(s);
+    setSettings(getSettings());
+  };
+
+  const enableNotif = async () => {
+    if (!('Notification' in window)) return;
+    try { setNotifStatus(await Notification.requestPermission()); } catch {}
   };
 
   const handleShareApp = () => {
@@ -55,9 +73,23 @@ export default function Settings() {
     }
     try {
       deleteAccount();
+      clearAccount();
     } catch {}
     logout();
     window.location.href = '/login';
+  };
+
+  const verifyAndDelete = async () => {
+    setDelError('');
+    const acc = getAccount();
+    if (acc) {
+      try {
+        const hash = await pbkdf2(delPassword, acc.salt);
+        if (hash !== acc.hash) { setDelError('Incorrect password.'); return; }
+      } catch { setDelError('Could not verify password.'); return; }
+    }
+    if (!delConfirm) { setDelError('Please confirm you understand this is permanent.'); return; }
+    await handleDeleteAccount();
   };
 
   const themeOptions = [
@@ -67,7 +99,7 @@ export default function Settings() {
   ];
 
   return (
-    <div className="safe-top px-4 pb-4 min-h-screen">
+    <div className="safe-top px-5 pb-4 min-h-screen">
       <header className="mb-6">
         <h1 className="text-3xl font-extrabold lowercase tracking-tight">settings</h1>
         <p className="text-sm text-muted-foreground lowercase mt-0.5">make it yours</p>
@@ -160,6 +192,111 @@ export default function Settings() {
         </div>
       </section>
 
+      {/* journal */}
+      <section className="mb-6">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase mb-3">journal</h2>
+        <div className="rounded-2xl border border-border p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium lowercase">period tracking</p>
+              <p className="text-xs text-muted-foreground lowercase mt-0.5">show period tracking in your journal</p>
+            </div>
+            <button
+              onClick={() => updateSettings({ periodTracking: !settings.periodTracking })}
+              className={cn('touch-44 relative w-10 h-6 rounded-full transition-colors', settings.periodTracking ? 'bg-foreground' : 'bg-muted')}
+            >
+              <span className={cn('absolute top-1 w-4 h-4 rounded-full bg-background transition-all', settings.periodTracking ? 'left-5' : 'left-1')} />
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* alarms */}
+      <section className="mb-6">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase mb-3">alarms</h2>
+        <div className="rounded-2xl border border-border p-4 space-y-4">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground lowercase block mb-1.5">default sound</label>
+            <div className="flex gap-2">
+              <select
+                value={settings.defaultSound}
+                onChange={(e) => updateSettings({ defaultSound: e.target.value })}
+                className="flex-1 px-3 py-2.5 rounded-xl bg-muted text-sm outline-none"
+              >
+                {SOUNDS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+              </select>
+              <button
+                onClick={() => { const v = VIBRATIONS.find((x) => x.id === settings.defaultVibration) || VIBRATIONS[0]; preview(settings.defaultSound || 'classic', v.pattern); }}
+                className="touch-44 px-3 rounded-xl bg-muted flex items-center gap-1 text-xs font-medium lowercase"
+              >
+                <Play className="w-3.5 h-3.5" /> test
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground lowercase block mb-1.5">default vibration</label>
+            <select
+              value={settings.defaultVibration}
+              onChange={(e) => updateSettings({ defaultVibration: e.target.value })}
+              className="w-full px-3 py-2.5 rounded-xl bg-muted text-sm outline-none"
+            >
+              {VIBRATIONS.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground lowercase block mb-1.5">default snooze</label>
+            <div className="flex gap-2">
+              {[1, 5, 10].map((m) => (
+                <button
+                  key={m}
+                  onClick={() => updateSettings({ defaultSnooze: m })}
+                  className={cn('touch-44 flex-1 py-2.5 rounded-xl text-sm font-medium lowercase', Number(settings.defaultSnooze) === m ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground')}
+                >
+                  {m}m
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground lowercase block mb-1.5">time format</label>
+            <div className="flex gap-2">
+              {['24h', '12h'].map((f) => (
+                <button
+                  key={f}
+                  onClick={() => updateSettings({ clockFormat: f })}
+                  className={cn('touch-44 flex-1 py-2.5 rounded-xl text-sm font-medium lowercase', settings.clockFormat === f ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground')}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium lowercase">notifications</p>
+              <p className="text-xs text-muted-foreground lowercase mt-0.5">{notifStatus === 'granted' ? 'allowed' : notifStatus === 'denied' ? 'blocked' : notifStatus === 'unsupported' ? 'unsupported' : 'ask once'}</p>
+            </div>
+            {notifStatus !== 'granted' && notifStatus !== 'unsupported' && (
+              <button onClick={enableNotif} className="touch-44 flex items-center gap-1.5 px-3 h-9 rounded-full bg-muted text-xs font-medium lowercase">
+                <Bell className="w-3.5 h-3.5" /> enable
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* my files */}
+      <section className="mb-6">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase mb-3">my files</h2>
+        <div className="rounded-2xl border border-border p-4">
+          <MyFiles />
+        </div>
+      </section>
+
       {/* account */}
       <section className="mb-6">
         <h2 className="text-xs font-semibold text-muted-foreground uppercase mb-3">account</h2>
@@ -198,41 +335,90 @@ export default function Settings() {
         onClose={() => setShareOpen(false)}
       />
 
-      {/* delete confirmation */}
+      {/* delete confirmation (two-step: warning → password + confirm) */}
       {deleteOpen && (
         <div
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-          onClick={() => setDeleteOpen(false)}
+          onClick={() => { setDeleteOpen(false); setDelStep(0); setDelPassword(''); setDelConfirm(false); setDelError(''); }}
         >
           <div className="absolute inset-0 bg-background/60 backdrop-blur-sm animate-fade-in" />
           <div
             className="relative w-full max-w-lg bg-card rounded-t-3xl sm:rounded-3xl border border-border p-5 pb-8 animate-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex flex-col items-center text-center mb-4">
-              <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center mb-3">
-                <AlertCircle className="w-6 h-6 text-destructive" />
-              </div>
-              <h3 className="text-base font-semibold lowercase">delete account?</h3>
-              <p className="text-xs text-muted-foreground lowercase mt-1.5 max-w-xs">
-                this action is permanent. all your folders, lists, journal entries, and places will be permanently deleted. this cannot be undone.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setDeleteOpen(false)}
-                className="touch-44 flex-1 py-3 rounded-2xl bg-muted text-muted-foreground text-sm font-medium lowercase"
-              >
-                cancel
-              </button>
-              <button
-                onClick={handleDeleteAccount}
-                disabled={deleting}
-                className="touch-44 flex-1 py-3 rounded-2xl bg-destructive text-destructive-foreground text-sm font-medium lowercase disabled:opacity-50"
-              >
-                {deleting ? 'deleting…' : 'delete forever'}
-              </button>
-            </div>
+            {delStep === 0 ? (
+              <>
+                <div className="flex flex-col items-center text-center mb-4">
+                  <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center mb-3">
+                    <AlertCircle className="w-6 h-6 text-destructive" />
+                  </div>
+                  <h3 className="text-base font-semibold lowercase">delete account?</h3>
+                  <p className="text-xs text-muted-foreground lowercase mt-1.5 max-w-xs">
+                    this action is permanent. all your folders, lists, journal entries, and places will be permanently deleted. this cannot be undone.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setDeleteOpen(false); setDelStep(0); }}
+                    className="touch-44 flex-1 py-3 rounded-2xl bg-muted text-muted-foreground text-sm font-medium lowercase"
+                  >
+                    cancel
+                  </button>
+                  <button
+                    onClick={() => setDelStep(1)}
+                    className="touch-44 flex-1 py-3 rounded-2xl bg-foreground text-background text-sm font-medium lowercase"
+                  >
+                    continue
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-col items-center text-center mb-4">
+                  <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center mb-3">
+                    <AlertCircle className="w-6 h-6 text-destructive" />
+                  </div>
+                  <h3 className="text-base font-semibold lowercase">confirm deletion</h3>
+                  <p className="text-xs text-muted-foreground lowercase mt-1.5 max-w-xs">
+                    enter your password and confirm to delete forever.
+                  </p>
+                </div>
+                {delError && (
+                  <div className="mb-3 p-2.5 rounded-lg bg-destructive/10 text-destructive text-xs lowercase">{delError}</div>
+                )}
+                <input
+                  type="password"
+                  value={delPassword}
+                  onChange={(e) => setDelPassword(e.target.value)}
+                  placeholder="password"
+                  className="w-full px-3 py-2.5 rounded-xl bg-muted text-sm outline-none mb-3"
+                />
+                <label className="flex items-center gap-2 mb-4 text-xs lowercase text-muted-foreground">
+                  <button
+                    onClick={() => setDelConfirm((c) => !c)}
+                    className={cn('touch-44 w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0', delConfirm ? 'bg-foreground border-foreground' : 'border-border')}
+                  >
+                    {delConfirm && <Check className="w-3 h-3 text-background" />}
+                  </button>
+                  i understand this is permanent and cannot be undone
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setDelStep(0)}
+                    className="touch-44 flex-1 py-3 rounded-2xl bg-muted text-muted-foreground text-sm font-medium lowercase"
+                  >
+                    back
+                  </button>
+                  <button
+                    onClick={verifyAndDelete}
+                    disabled={deleting || !delPassword || !delConfirm}
+                    className="touch-44 flex-1 py-3 rounded-2xl bg-destructive text-destructive-foreground text-sm font-medium lowercase disabled:opacity-50"
+                  >
+                    {deleting ? 'deleting…' : 'delete forever'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

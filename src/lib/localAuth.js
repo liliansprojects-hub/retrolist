@@ -1,10 +1,12 @@
 // local, offline-first account credentials.
-// username + salted/hashed password (PBKDF2 via Web Crypto) stored in localStorage.
-// no Base44 session or OAuth — login works fully offline on a device that has
-// the account. cross-device sync is handled separately in cloudSync.js.
+// supports MULTIPLE accounts per device: an accounts map keyed by username, plus a
+// session pointing at the currently-signed-in username. no Base44 session or OAuth —
+// login works fully offline for any account already on the device. cross-device sync
+// is handled separately in cloudSync.js (partitioned by username).
 
-const ACCOUNT_KEY = 'retrolist_account';
+const ACCOUNTS_KEY = 'retrolist_accounts';
 const SESSION_KEY = 'retrolist_session';
+const LEGACY_ACCOUNT_KEY = 'retrolist_account';
 
 const read = function (key, fallback) {
   try {
@@ -22,6 +24,26 @@ const writeRaw = function (key, val) {
     console.error('storage write failed', e);
   }
 };
+
+const LEGACY_COLLECTIONS = ['profile', 'settings', 'folders', 'journal', 'events', 'period', 'alarms', 'map_folders', 'deleted_log'];
+
+// one-time migration: assign pre-isolation (un-scoped) data to the first user who
+// logs in, then remove the legacy keys so later accounts start with their own data.
+export function migrateLegacyData(username) {
+  if (!username) return;
+  try {
+    const flag = 'retrolist_legacy_migrated';
+    if (localStorage.getItem(flag)) return;
+    LEGACY_COLLECTIONS.forEach(function (c) {
+      const legacy = localStorage.getItem('retrolist_' + c);
+      if (legacy != null) {
+        localStorage.setItem('retrolist_' + username + '__' + c, legacy);
+        localStorage.removeItem('retrolist_' + c);
+      }
+    });
+    localStorage.setItem(flag, '1');
+  } catch (e) {}
+}
 
 export function randomHex(bytes) {
   const n = bytes || 16;
@@ -50,28 +72,57 @@ export async function pbkdf2(password, saltHex) {
     .join('');
 }
 
+// accounts map (with one-time migration from the legacy single-account key)
+function getAccounts() {
+  let map = read(ACCOUNTS_KEY, null);
+  if (!map || typeof map !== 'object') {
+    const legacy = read(LEGACY_ACCOUNT_KEY, null);
+    map = (legacy && legacy.username) ? { [legacy.username]: legacy } : {};
+    writeRaw(ACCOUNTS_KEY, map);
+    try { localStorage.removeItem(LEGACY_ACCOUNT_KEY); } catch (e) {}
+    // fix legacy session ('1') to point at the migrated account so users stay logged in
+    if (legacy && legacy.username && localStorage.getItem(SESSION_KEY) === '1') {
+      try { localStorage.setItem(SESSION_KEY, legacy.username); } catch (e) {}
+    }
+  }
+  return map;
+}
+
+export function getAccountByUsername(username) {
+  if (!username) return null;
+  return getAccounts()[username.trim().toLowerCase()] || null;
+}
+
 export function getAccount() {
-  return read(ACCOUNT_KEY, null);
+  const u = localStorage.getItem(SESSION_KEY);
+  return u ? (getAccounts()[u] || null) : null;
 }
 
 export function saveAccount(account) {
-  writeRaw(ACCOUNT_KEY, account);
+  const map = getAccounts();
+  map[account.username] = account;
+  writeRaw(ACCOUNTS_KEY, map);
 }
 
-export function clearAccount() {
-  try { localStorage.removeItem(ACCOUNT_KEY); } catch (e) {}
+export function clearAccount(username) {
+  const u = username || localStorage.getItem(SESSION_KEY);
+  if (!u) return;
+  const map = getAccounts();
+  delete map[u];
+  writeRaw(ACCOUNTS_KEY, map);
 }
 
 export function isLoggedIn() {
   try {
-    return localStorage.getItem(SESSION_KEY) === '1' && !!getAccount();
+    const u = localStorage.getItem(SESSION_KEY);
+    return !!u && !!getAccounts()[u];
   } catch (e) {
     return false;
   }
 }
 
-export function setLoggedIn() {
-  try { localStorage.setItem(SESSION_KEY, '1'); } catch (e) {}
+export function setLoggedIn(username) {
+  try { localStorage.setItem(SESSION_KEY, username); } catch (e) {}
 }
 
 export function clearSession() {
@@ -84,6 +135,6 @@ export async function registerLocal(username, password) {
   const hash = await pbkdf2(password, salt);
   const account = { username: u, salt: salt, hash: hash, updated_date: Date.now() };
   saveAccount(account);
-  setLoggedIn();
+  setLoggedIn(u);
   return account;
 }

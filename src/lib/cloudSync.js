@@ -1,5 +1,6 @@
 const db = globalThis.__B44_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
 
+
 // cloud sync layer that does NOT use Base44's user session / OAuth.
 // all cloud access goes through public backend functions (service role) keyed
 // by the local username + password hash. works from any hosting domain because
@@ -8,7 +9,7 @@ const db = globalThis.__B44_DB__ || { auth:{ isAuthenticated: async()=>false, me
 import {
   getFolders, saveFolders, getJournal, saveJournal, getEvents, saveEvents,
   getMapFolders, saveMapFolders, getPeriodData, savePeriod, getProfile, saveProfileRaw,
-  getDeletedLog, saveDeletedLog,
+  getAlarms, saveAlarms, getDeletedLog, saveDeletedLog,
 } from './store';
 import { getAccount, saveAccount } from './localAuth';
 
@@ -75,6 +76,9 @@ function collectLocalRecords() {
   });
   getPeriodData().forEach(function (p) {
     records.push({ local_id: p.id, kind: 'period', payload: p, local_updated_at: p.created_date || 0 });
+  });
+  getAlarms().forEach(function (a) {
+    records.push({ local_id: a.id, kind: 'alarm', payload: a, local_updated_at: a.updated_date || a.created_date || 0 });
   });
   const profile = getProfile();
   records.push({ local_id: '__profile__', kind: 'profile', payload: profile, local_updated_at: profile.updated_date || 0 });
@@ -153,6 +157,18 @@ function applyRecordToLocal(kind, payload, isDeleted) {
         else period = period.concat([payload]);
       }
       savePeriod(period);
+      break;
+    }
+    case 'alarm': {
+      let alarms = getAlarms();
+      if (isDeleted) {
+        alarms = alarms.filter(function (a) { return a.id !== payload.id; });
+      } else {
+        const idx = alarms.findIndex(function (a) { return a.id === payload.id; });
+        if (idx >= 0) alarms[idx] = payload;
+        else alarms = alarms.concat([payload]);
+      }
+      saveAlarms(alarms);
       break;
     }
     case 'profile': {

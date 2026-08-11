@@ -3,14 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import {
   CheckSquare, List, Star, MapPin, Bell, StickyNote, Palette, Repeat,
   Calendar, Book, Film, Map as MapIcon, BookHeart, Share2, Pencil, Trash2,
+  LayoutGrid, ChevronRight, Folder, FolderPlus, FolderInput, Copy, Images, Search, Pin, ArrowDownUp, X,
 } from 'lucide-react';
 import {
-  getFolders, addFolder, updateFolder, deleteFolder, getProfile, addEvent,
+  getFolders, getRootFolders, addFolder, updateFolder, deleteFolder, moveFolder, copyFolder,
+  getProfile, addEvent, addAlarm, getSettings, saveSettings, LIST_TYPES,
 } from '@/lib/store';
 import FolderCard from '@/components/FolderCard';
 import PlusWheel from '@/components/PlusWheel';
 import FolderEditModal from '@/components/FolderEditModal';
+import FolderPicker from '@/components/FolderPicker';
 import EventModal from '@/components/EventModal';
+import AlarmModal from '@/components/AlarmModal';
 import ShareDialog from '@/components/ShareDialog';
 
 export default function Home() {
@@ -22,9 +26,16 @@ export default function Home() {
   const [eventOpen, setEventOpen] = useState(false);
   const [menuFolder, setMenuFolder] = useState(null);
   const [shareData, setShareData] = useState(null);
+  const [alarmOpen, setAlarmOpen] = useState(false);
+  const [layout, setLayout] = useState(getSettings().homeLayout || 'blocks');
+  const [sortDir, setSortDir] = useState('desc');
+  const [filterKey, setFilterKey] = useState('all');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [picker, setPicker] = useState(null); // { mode, folder }
 
   const refresh = () => {
-    setFolders(getFolders());
+    setFolders(getRootFolders());
     setProfile(getProfile());
   };
 
@@ -49,6 +60,8 @@ export default function Home() {
     { label: 'movies', value: 'movie', icon: Film },
     { label: 'map', value: 'map_folder', icon: MapIcon },
     { label: 'journal', value: 'journal', icon: BookHeart },
+    { label: 'album', value: 'album', icon: Images },
+    { label: 'folder', value: 'folder', icon: Folder },
   ];
 
   const handleSelect = (value) => {
@@ -62,6 +75,10 @@ export default function Home() {
     }
     if (value === 'journal') {
       navigate('/journal');
+      return;
+    }
+    if (value === 'reminder') {
+      setAlarmOpen(true);
       return;
     }
     setCreateType(value);
@@ -92,54 +109,156 @@ export default function Home() {
     refresh();
   };
 
+  const toggleLayout = () => {
+    const next = layout === 'blocks' ? 'list' : 'blocks';
+    saveSettings({ homeLayout: next });
+    setLayout(next);
+  };
+
+  const TYPE_MAP = { notes: 'note', reminders: 'reminder', todos: 'todo', folders: 'folder', albums: 'album' };
+  const FILTERS = ['all', 'notes', 'reminders', 'todos', 'folders', 'albums', 'others'];
+
+  const matchesQuery = (f) => {
+    if (!query.trim()) return true;
+    const name = (f.name || '').toLowerCase();
+    const q = query.trim().toLowerCase();
+    if (name.includes(q)) return true;
+    let i = 0;
+    for (const ch of name) { if (ch === q[i]) i++; if (i === q.length) return true; }
+    return false;
+  };
+
+  const visibleFolders = (() => {
+    const known = ['note', 'reminder', 'todo', 'list', 'album', 'folder'];
+    let list = folders.filter((f) => {
+      if (filterKey === 'all') return true;
+      const t = f.type || 'list';
+      if (filterKey === 'others') return !known.includes(t);
+      return TYPE_MAP[filterKey] === t;
+    });
+    list = list.filter(matchesQuery);
+    list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || ((b.updated_date || 0) - (a.updated_date || 0)) * (sortDir === 'desc' ? 1 : -1));
+    return list;
+  })();
+
   return (
-    <div className="safe-top px-4 pb-4 min-h-screen">
+    <div className="safe-top px-5 pb-4 min-h-screen">
       <header className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-3xl font-extrabold lowercase tracking-tight">retrolist</h1>
-          <p className="text-sm text-muted-foreground lowercase mt-0.5">
-            hi, {profile.name} ✶
-          </p>
         </div>
-        <button
-          onClick={() => navigate('/settings')}
-          className="touch-44 w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-bold uppercase"
-        >
-          {profile.name?.slice(0, 1) || 'y'}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setSearchOpen((s) => !s)}
+            className={`touch-44 w-7 h-7 rounded-full flex items-center justify-center ${searchOpen || query ? 'bg-foreground text-background' : 'bg-muted'}`}
+            aria-label="search"
+          >
+            <Search className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={toggleLayout}
+            className="touch-44 w-7 h-7 rounded-full bg-muted flex items-center justify-center"
+            aria-label="toggle layout"
+          >
+            {layout === 'blocks' ? <List className="w-3.5 h-3.5" /> : <LayoutGrid className="w-3.5 h-3.5" />}
+          </button>
+          <button
+            onClick={() => setCreateType('folder')}
+            className="touch-44 w-7 h-7 rounded-full bg-foreground text-background flex items-center justify-center"
+            aria-label="new folder"
+          >
+            <FolderPlus className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => navigate('/settings')}
+            className="touch-44 w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden"
+          >
+            {profile.avatar ? (
+              <img src={profile.avatar} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-[10px] font-bold uppercase">{profile.name?.slice(0, 1) || 'y'}</span>
+            )}
+          </button>
+        </div>
       </header>
+
+      {searchOpen && (
+        <div className="mb-3 flex items-center gap-2 animate-fade-in">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="search by name…"
+              className="w-full pl-10 pr-10 h-11 rounded-2xl bg-muted text-sm outline-none lowercase"
+            />
+            {query && (
+              <button onClick={() => setQuery('')} className="touch-44 absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full flex items-center justify-center">
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            )}
+          </div>
+          <button onClick={() => { setSearchOpen(false); setQuery(''); }} className="touch-44 px-3 h-11 rounded-2xl bg-muted text-xs font-medium lowercase">cancel</button>
+        </div>
+      )}
 
       {folders.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
-          <svg
-            className="w-20 h-20 text-muted-foreground/20 mb-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
+          <svg className="w-20 h-20 text-muted-foreground/20 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 7v12a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1H10L8 6H4a1 1 0 0 0-1 1z" />
             <line x1="12" y1="11" x2="12" y2="17" />
             <line x1="9" y1="14" x2="15" y2="14" />
           </svg>
           <p className="text-sm text-muted-foreground lowercase">no folders yet</p>
-          <p className="text-xs text-muted-foreground/50 lowercase mt-1">
-            hold + to choose a list type
-          </p>
+          <p className="text-xs text-muted-foreground/50 lowercase mt-1">hold + to choose a list type</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {folders.map((f) => (
-            <FolderCard
-              key={f.id}
-              folder={f}
-              onClick={() => navigate(`/folder/${f.id}`)}
-              onMenu={() => setMenuFolder(f)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="mb-4 flex items-center gap-2">
+            <button
+              onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
+              className="touch-44 shrink-0 flex items-center gap-1 px-2.5 h-7 rounded-full bg-muted text-[10px] font-medium lowercase"
+            >
+              <ArrowDownUp className="w-3 h-3" /> {sortDir === 'desc' ? 'newest' : 'oldest'}
+            </button>
+            <select
+              value={filterKey}
+              onChange={(e) => setFilterKey(e.target.value)}
+              className="touch-44 shrink-0 px-2.5 h-7 rounded-full bg-muted text-[10px] font-medium lowercase outline-none"
+            >
+              {FILTERS.map((key) => (
+                <option key={key} value={key}>{key === 'all' ? 'all types' : key}</option>
+              ))}
+            </select>
+          </div>
+
+          {visibleFolders.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground/50 lowercase py-16">no matches</p>
+          ) : layout === 'blocks' ? (
+            <div className="columns-2 sm:columns-3 lg:columns-4 gap-3">
+              {visibleFolders.map((f) => (
+                <FolderCard key={f.id} folder={f} onClick={() => navigate(`/folder/${f.id}`)} onMenu={() => setMenuFolder(f)} />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {visibleFolders.map((f) => (
+                <button key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="w-full flex items-center gap-3 p-3 rounded-2xl border border-border bg-card active:scale-[0.98] transition-transform text-left">
+                  <span className="w-9 h-9 rounded-xl border-2 border-foreground/40 flex items-center justify-center shrink-0 relative">
+                    <Folder className="w-5 h-5 text-foreground/70" strokeWidth={1.75} />
+                    {f.pinned && <Pin className="w-3 h-3 absolute -top-1 -right-1 text-foreground fill-foreground" />}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold lowercase truncate">{f.name}</p>
+                    <p className="text-xs text-muted-foreground lowercase">{f.items?.length || 0} items · {(LIST_TYPES[f.type]?.label) || f.type}</p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </button>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       <PlusWheel items={wheelItems} onSelect={handleSelect} />
@@ -164,11 +283,33 @@ export default function Home() {
           navigate('/journal');
         }}
       />
+      <AlarmModal
+        open={alarmOpen}
+        onClose={() => setAlarmOpen(false)}
+        onSave={(data) => {
+          addAlarm(data);
+          setAlarmOpen(false);
+          navigate('/alarms');
+        }}
+      />
       <ShareDialog
         open={!!shareData}
         data={shareData}
         title={shareData?.name}
         onClose={() => setShareData(null)}
+      />
+      <FolderPicker
+        open={!!picker}
+        title={picker?.mode === 'copy' ? 'copy to' : 'move to'}
+        allowMainPage
+        onClose={() => setPicker(null)}
+        onSelect={(targetId) => {
+          if (!picker) return;
+          if (picker.mode === 'move') moveFolder(picker.folder.id, targetId);
+          else copyFolder(picker.folder.id, targetId);
+          setPicker(null);
+          refresh();
+        }}
       />
 
       {menuFolder && (
@@ -185,6 +326,12 @@ export default function Home() {
             <h3 className="text-sm font-semibold lowercase mb-3">{menuFolder.name}</h3>
             <div className="space-y-1">
               <button
+                onClick={() => { updateFolder(menuFolder.id, { pinned: !menuFolder.pinned }); setMenuFolder(null); refresh(); }}
+                className="touch-44 w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-muted text-sm lowercase"
+              >
+                <Pin className="w-4 h-4 text-muted-foreground" /> {menuFolder.pinned ? 'unpin' : 'pin to top'}
+              </button>
+              <button
                 onClick={() => {
                   setEditFolder(menuFolder);
                   setMenuFolder(null);
@@ -192,6 +339,18 @@ export default function Home() {
                 className="touch-44 w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-muted text-sm lowercase"
               >
                 <Pencil className="w-4 h-4 text-muted-foreground" /> edit
+              </button>
+              <button
+                onClick={() => { setPicker({ mode: 'move', folder: menuFolder }); setMenuFolder(null); }}
+                className="touch-44 w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-muted text-sm lowercase"
+              >
+                <FolderInput className="w-4 h-4 text-muted-foreground" /> move to
+              </button>
+              <button
+                onClick={() => { setPicker({ mode: 'copy', folder: menuFolder }); setMenuFolder(null); }}
+                className="touch-44 w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-muted text-sm lowercase"
+              >
+                <Copy className="w-4 h-4 text-muted-foreground" /> copy to
               </button>
               <button
                 onClick={handleShare}

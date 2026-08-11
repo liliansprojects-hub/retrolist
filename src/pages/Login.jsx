@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LogIn, User, Lock, Loader2 } from 'lucide-react';
 import AuthLayout from '@/components/AuthLayout';
-import { getAccount, isLoggedIn, pbkdf2, setLoggedIn, saveAccount } from '@/lib/localAuth';
+import { getAccountByUsername, isLoggedIn, pbkdf2, setLoggedIn, saveAccount } from '@/lib/localAuth';
 import { accountLookupRemote, syncExchange, applySyncedRecords } from '@/lib/cloudSync';
 import { useLocalAuth } from '@/lib/LocalAuthContext';
 
@@ -29,11 +29,11 @@ export default function Login() {
     setLoading(true);
     try {
       // device already has this account → verify locally (works offline)
-      const local = getAccount();
-      if (local && local.username === u) {
+      const local = getAccountByUsername(u);
+      if (local) {
         const hash = await pbkdf2(password, local.salt);
-        if (hash !== local.hash) { setError('wrong password'); return; }
-        setLoggedIn();
+        if (hash !== local.hash) { setError('Incorrect username or password.'); return; }
+        setLoggedIn(u);
         refresh();
         navigate('/', { replace: true });
         return;
@@ -42,26 +42,29 @@ export default function Login() {
       // new device → fetch salt from the cloud and pull this account's data
       // (requires internet for this one step, then it's offline again)
       if (!navigator.onLine) {
-        setError('no account on this device — connect to the internet to sign in');
+        setError('Account not found on this device — go online to sign in.');
         return;
       }
       const lookup = await accountLookupRemote(u);
       if (lookup && lookup.error) { setError(lookup.error); return; }
-      if (!lookup || !lookup.exists) { setError('no account found with that username'); return; }
+      if (!lookup || !lookup.exists) { setError('Account not found.'); return; }
 
       const hash = await pbkdf2(password, lookup.salt);
       const res = await syncExchange(u, hash, []);
       if (res && res.error) {
-        setError(res.error === 'unauthorized' ? 'wrong password' : res.error);
+        setError(res.error === 'unauthorized' ? 'Incorrect username or password.' : res.error);
         return;
       }
       if (res && Array.isArray(res.records)) applySyncedRecords(res.records);
       saveAccount({ username: u, salt: lookup.salt, hash, updated_date: Date.now() });
-      setLoggedIn();
+      setLoggedIn(u);
       refresh();
       navigate('/', { replace: true });
     } catch (err) {
-      setError((err && err.message) || 'sign in failed');
+      const msg = (err && err.message) || '';
+      if (/not found|404|no such|does not exist/i.test(msg)) setError('Account not found.');
+      else if (/unauthorized|wrong password|invalid/i.test(msg)) setError('Incorrect username or password.');
+      else setError('sign in failed — check your connection and try again');
     } finally {
       setLoading(false);
     }

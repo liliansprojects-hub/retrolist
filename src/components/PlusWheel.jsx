@@ -44,8 +44,6 @@ export default function PlusWheel({ items, onSelect, position = 'bottom-center' 
   };
 
   const count = items.length;
-  const arc = Math.PI; // semicircle
-  const startAngle = Math.PI; // start from left
 
   // responsive radius: fit within the smaller of width/height, leaving margin for item labels
   const [vp, setVp] = useState(() => ({ w: typeof window !== 'undefined' ? window.innerWidth : 360, h: typeof window !== 'undefined' ? window.innerHeight : 600 }));
@@ -56,8 +54,11 @@ export default function PlusWheel({ items, onSelect, position = 'bottom-center' 
     return () => { window.removeEventListener('resize', onResize); window.removeEventListener('orientationchange', onResize); };
   }, []);
   const minDim = Math.min(vp.w, vp.h);
-  const itemSize = minDim < 380 ? 52 : 60;
-  const radius = Math.max(60, Math.min(120, (minDim - itemSize - 48) / 2 / 1.5));
+  const itemSize = minDim < 380 ? 40 : 48;
+  // full circle: size radius so adjacent items never overlap (chord >= item + gap), capped to screen
+  const rMin = (itemSize + 6) / (2 * Math.sin(Math.PI / Math.max(1, count)));
+  const rMax = minDim / 2 - itemSize / 2 - 44;
+  const radius = Math.max(rMin, Math.min(rMax, rMin + 6));
 
   const posClass =
     position === 'bottom-right'
@@ -92,9 +93,9 @@ export default function PlusWheel({ items, onSelect, position = 'bottom-center' 
           {wheelMode && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-auto no-scrollbar p-4">
               {items.map((item, i) => {
-                const angle = startAngle + (count > 1 ? (i / (count - 1)) * arc : arc / 2);
-                const x = Math.cos(angle) * radius * 1.5;
-                const y = Math.sin(angle) * radius * 1.5;
+                const angle = -Math.PI / 2 + (i / Math.max(1, count)) * Math.PI * 2;
+                const x = Math.cos(angle) * radius;
+                const y = Math.sin(angle) * radius;
                 const delay = i * 0.03;
                 return (
                   <button

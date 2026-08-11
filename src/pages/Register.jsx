@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { UserPlus, User, Lock, Loader2 } from 'lucide-react';
 import AuthLayout from '@/components/AuthLayout';
-import { registerLocal, getAccount, isLoggedIn } from '@/lib/localAuth';
+import { registerLocal, getAccountByUsername, isLoggedIn } from '@/lib/localAuth';
 import { accountLookupRemote } from '@/lib/cloudSync';
 import { useLocalAuth } from '@/lib/LocalAuthContext';
 
@@ -29,7 +29,7 @@ export default function Register() {
     if (!u || !password) { setError('enter a username and password'); return; }
     if (password.length < 4) { setError('password must be at least 4 characters'); return; }
     if (password !== confirm) { setError('passwords do not match'); return; }
-    if (getAccount()) { setError('an account already exists on this device — sign in instead'); return; }
+    if (getAccountByUsername(u)) { setError('that username is already taken on this device — sign in instead'); return; }
 
     setLoading(true);
     try {

@@ -2,14 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import ColorPicker from './ColorPicker';
 import ImageUpload from './ImageUpload';
-import { LIST_TYPES } from '@/lib/store';
+import { LIST_TYPES, BLOCK_SIZES } from '@/lib/store';
 
-export default function FolderEditModal({ open, onClose, onSave, folder, defaultType }) {
+export default function FolderEditModal({ open, onClose, onSave, folder, defaultType, defaultParentId }) {
   const [name, setName] = useState('');
   const [type, setType] = useState('list');
   const [color, setColor] = useState('#f4f4f5');
   const [cover, setCover] = useState(null);
   const [emoji, setEmoji] = useState('');
+  const [size, setSize] = useState('portrait');
 
   useEffect(() => {
     if (open) {
@@ -18,6 +19,7 @@ export default function FolderEditModal({ open, onClose, onSave, folder, default
       setColor(folder?.color || '#f4f4f5');
       setCover(folder?.cover || null);
       setEmoji(folder?.emoji || '');
+      setSize(folder?.size || 'portrait');
     }
   }, [open, folder, defaultType]);
 
@@ -25,7 +27,7 @@ export default function FolderEditModal({ open, onClose, onSave, folder, default
 
   const handleSave = () => {
     if (!name.trim()) return;
-    onSave({ name: name.trim(), type, color, cover, emoji: emoji.trim() });
+    onSave({ name: name.trim(), type, color, cover, emoji: emoji.trim(), size, ...(defaultParentId && !folder ? { parent_id: defaultParentId } : {}) });
     onClose();
   };
 
@@ -72,7 +74,32 @@ export default function FolderEditModal({ open, onClose, onSave, folder, default
             </div>
           </div>
 
-          <ImageUpload value={cover} onChange={setCover} label="cover photo" aspect={3 / 4} maxSize={1600} quality={0.92} className="h-40" />
+          <div>
+            <label className="text-xs font-medium text-muted-foreground lowercase block mb-1.5">size</label>
+            <div className="flex flex-wrap gap-2">
+              {BLOCK_SIZES.map((s) => {
+                const [aw, ah] = s.ratio.split('/').map((n) => Number(n.trim()));
+                const max = 26;
+                const pw = aw >= ah ? max : Math.round(max * (aw / ah));
+                const ph = ah >= aw ? max : Math.round(max * (ah / aw));
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => setSize(s.id)}
+                    className={`flex flex-col items-center gap-1 px-2.5 py-2 rounded-xl border transition-colors ${size === s.id ? 'border-foreground bg-foreground/5' : 'border-border bg-muted'}`}
+                  >
+                    <span
+                      className={`block rounded-sm ${size === s.id ? 'bg-foreground' : 'bg-muted-foreground/60'}`}
+                      style={{ width: pw, height: ph }}
+                    />
+                    <span className={`text-[10px] font-medium lowercase ${size === s.id ? 'text-foreground' : 'text-muted-foreground'}`}>{s.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <ImageUpload value={cover} onChange={setCover} label="cover photo" aspect={3 / 4} maxSize={1200} quality={0.88} className="h-40" />
 
           <div>
             <label className="text-xs font-medium text-muted-foreground lowercase block mb-1.5">emoji (optional)</label>
