@@ -1,0 +1,230 @@
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import FolderCard from './FolderCard';
+import { BLOCK_SIZES } from '@/lib/store';
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+
+// freeform skyline packer: every card keeps its own pixel width + height and
+// drops onto the lowest available gap on the skyline — so cards never overlap,
+// resizing one card reflows the rest, and any of the four edges can be dragged
+// freely (no column snapping, no glitch). defaults still derive from the
+// stored aspect/span so existing cards keep their look until resized.
+const GAP = 14;
+const H_MARGIN = 6;
+const MIN_W = 120;
+const MAX_W = 1000;
+const MIN_H = 90;
+const MAX_H = 760;
+
+function parseRatio(r) {
+  if (!r) return 3 / 4;
+  const parts = String(r).split('/').map((s) => Number(s.trim()));
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return 3 / 4;
+  return parts[0] / parts[1];
+}
+
+// skyline bottom-left bin packing — returns [{x,y,w,h}] for each item, in order.
+function packSkyline(items, containerW) {
+  const W = Math.max(1, containerW);
+  let sky = [{ x1: 0, x2: W, y: 0 }];
+  const placed = [];
+  for (const it of items) {
+    let w = Math.max(MIN_W, Math.min(it.w, W));
+    let best = null;
+    for (let i = 0; i < sky.length; i++) {
+      const left = sky[i].x1;
+      const right = left + w;
+      if (right > W + 0.5) continue;
+      let y = 0;
+      for (const s of sky) {
+        if (s.x2 <= left || s.x1 >= right) continue;
+        if (s.y > y) y = s.y;
+      }
+      if (!best || y < best.y) best = { x: left, y };
+    }
+    if (!best) { best = { x: 0, y: sky.reduce((m, s) => Math.max(m, s.y), 0) }; w = W; }
+    placed.push({ x: best.x, y: best.y, w, h: it.h });
+    const top = best.y + it.h + GAP;
+    const next = [];
+    for (const s of sky) {
+      if (s.x2 <= best.x || s.x1 >= best.x + w) { next.push(s); continue; }
+      if (s.x1 < best.x) next.push({ x1: s.x1, x2: best.x, y: s.y });
+      if (s.x2 > best.x + w) next.push({ x1: best.x + w, x2: s.x2, y: s.y });
+      next.push({ x1: Math.max(s.x1, best.x), x2: Math.min(s.x2, best.x + w), y: top });
+    }
+    next.sort((a, b) => a.x1 - b.x1);
+    const merged = [];
+    for (const s of next) {
+      const last = merged[merged.length - 1];
+      if (last && last.x2 === s.x1 && last.y === s.y) merged[merged.length - 1] = { x1: last.x1, x2: s.x2, y: s.y };
+      else merged.push(s);
+    }
+    sky = merged;
+  }
+  return placed;
+}
+
+export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMenu }) {
+  const ref = useRef(null);
+  const [width, setWidth] = useState(0);
+  const dragRef = useRef(null);
+  const [, force] = useState(0);
+  const rerender = () => force((x) => x + 1);
+  const onResizeRef = useRef(onResize);
+  onResizeRef.current = onResize;
+
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+    setWidth(ref.current.clientWidth);
+    const ro = new ResizeObserver((entries) => setWidth(entries[0].contentRect.width));
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+
+  const columns = width < 640 ? 2 : width < 1024 ? 3 : 4;
+  // blocks pack edge-to-edge in the skyline; placedM adds the horizontal margins
+  // afterwards, so the column width is the full width divided by columns.
+  const colW = width > 0 ? width / columns : 0;
+
+  const items = folders.map((f, idx) => {
+    const sz = BLOCK_SIZES.find((s) => s.id === (f.size || 'portrait'));
+    const aspect = f.aspect || parseRatio(sz ? sz.ratio : '3/4');
+    const span = f.span === 2 && width >= 2 * MIN_W ? 2 : 1;
+    const defW = span === 2 ? Math.min(width, 2 * colW) : colW;
+    const w = f.w != null ? Math.max(MIN_W, Math.min(width || defW, f.w)) : defW;
+    const h = f.h != null ? f.h : (defW > 0 ? defW / aspect : 300);
+    return { id: f.id, w: Math.max(MIN_W, Math.min(MAX_W, w)), h: Math.max(MIN_H, Math.min(MAX_H, h)), order: f.order != null ? f.order : idx };
+  });
+
+  const packItems = items.slice().sort((a, b) => a.order - b.order);
+  if (dragRef.current) {
+    const idx = packItems.findIndex((it) => it.id === dragRef.current.id);
+    if (idx >= 0) packItems[idx] = { ...packItems[idx], w: dragRef.current.w, h: dragRef.current.h };
+  }
+
+  const placed = width > 0 ? packSkyline(packItems, width) : [];
+  // add horizontal margin so blocks never touch the viewport edge or each other
+  const placedM = placed.map((p) => ({ ...p, x: p.x + H_MARGIN, w: Math.max(MIN_W, p.w - 2 * H_MARGIN) }));
+  const totalH = placedM.reduce((m, p) => Math.max(m, p.y + p.h), 0);
+
+  // packItems only carries packing geometry (id/w/h/order) — look the real
+  // folder record back up by id so the card gets its actual name/color/cover
+  // instead of the stripped-down packing object.
+  const foldersById = {};
+  folders.forEach((f) => { foldersById[f.id] = f; });
+
+  const placedRef = useRef(placed); placedRef.current = placed;
+  const foldersRef = useRef(folders); foldersRef.current = folders;
+
+  const onMove = useCallback((e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (d.mode === 'move') {
+      // the held block follows the finger (transform) while others auto-shift
+      // (insert-and-shift reorder). on release the block settles into its new
+      // slot. lastInsert avoids jitter on repeated moves.
+      const lastX = e.clientX, lastY = e.clientY;
+      dragRef.current = { ...d, lastX, lastY };
+      rerender();
+      const cur = placedRef.current;
+      const all = foldersRef.current;
+      const over = cur.find((p) => p.id !== d.id && lastX >= p.x && lastX <= p.x + p.w && lastY >= p.y && lastY <= p.y + p.h);
+      if (over) {
+        const ids = all.map((f) => f.id);
+        const orders = all.map((f, i) => f.order != null ? f.order : i);
+        const sorted = ids.map((id, i) => ({ id, o: orders[i] })).sort((a, b) => a.o - b.o).map((s) => s.id);
+        const fromIdx = sorted.indexOf(d.id);
+        if (fromIdx >= 0) {
+          sorted.splice(fromIdx, 1);
+          const above = lastY < over.y + over.h / 2;
+          let insertAt = sorted.indexOf(over.id);
+          if (!above) insertAt += 1;
+          if (insertAt === d.lastInsert) return;
+          sorted.splice(insertAt, 0, d.id);
+          const map = {};
+          sorted.forEach((id, i) => { map[id] = i; });
+          dragRef.current = { ...dragRef.current, lastInsert: insertAt };
+          all.forEach((f) => onResizeRef.current(f.id, { order: map[f.id] }));
+        }
+      }
+      return;
+    }
+    let nw = d.startW;
+    let nh = d.startH;
+    if (d.edge === 'right') nw = d.startW + dx;
+    else if (d.edge === 'left') nw = d.startW - dx;
+    else if (d.edge === 'bottom') nh = d.startH + dy;
+    else if (d.edge === 'top') nh = d.startH - dy;
+    nw = Math.max(MIN_W, Math.min(width - 2 * H_MARGIN, nw));
+    nh = Math.max(MIN_H, Math.min(MAX_H, nh));
+    dragRef.current = { ...d, w: nw, h: nh };
+    rerender();
+  }, [width]);
+
+  const onUp = useCallback(() => {
+    const d = dragRef.current;
+    if (d && d.mode === 'resize') onResizeRef.current(d.id, { w: d.w, h: d.h });
+    dragRef.current = null;
+    rerender();
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+  }, [onMove]);
+
+  const onHandleDown = (e, edge, f, cardW, cardH) => {
+    e.stopPropagation();
+    e.preventDefault();
+    dragRef.current = { id: f.id, mode: 'resize', edge, startX: e.clientX, startY: e.clientY, startW: cardW, startH: cardH, w: cardW, h: cardH };
+    rerender();
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  const onBodyDown = (e, f) => {
+    e.stopPropagation();
+    e.preventDefault();
+    dragRef.current = { id: f.id, mode: 'move', startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY };
+    rerender();
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  if (!folders.length) return <div ref={ref} />;
+
+  const Handle = ({ edge, cls, Icon, item }) => (
+    <div
+      onPointerDown={(e) => onHandleDown(e, edge, item.f, item.w, item.h)}
+      className={`touch-44 absolute ${cls} w-5 h-5 rounded-lg bg-background/90 border border-border shadow flex items-center justify-center`}
+      style={{ touchAction: 'none' }}
+    >
+      <Icon className="w-3 h-3 text-foreground" />
+    </div>
+  );
+
+  return (
+    <div ref={ref} className="relative" style={{ height: totalH, marginLeft: -H_MARGIN, marginRight: -H_MARGIN }}>
+      {placedM.map((p, i) => {
+        const packed = packItems[i];
+        const f = foldersById[packed.id] || packed;
+        return (
+          <div key={f.id} className="absolute" style={{ left: p.x, top: p.y, width: p.w, height: p.h, zIndex: dragRef.current && dragRef.current.id === f.id && dragRef.current.mode === 'move' ? 30 : undefined, transform: dragRef.current && dragRef.current.id === f.id && dragRef.current.mode === 'move' ? `translate(${dragRef.current.lastX - p.x}px, ${dragRef.current.lastY - p.y}px)` : undefined, transition: dragRef.current && dragRef.current.id === f.id ? 'none' : 'left 0.18s ease, top 0.18s ease, width 0.18s ease, height 0.18s ease' }}>
+            <div onPointerDown={editMode ? (e) => onBodyDown(e, f) : undefined} className={editMode ? 'w-full h-full cursor-move' : 'w-full h-full'} style={{ touchAction: editMode ? 'none' : undefined }}>
+              <FolderCard fill folder={f} onClick={editMode ? undefined : () => onOpen(f.id)} onMenu={editMode ? undefined : () => onMenu(f)} />
+            </div>
+            {editMode && (
+              <>
+                <Handle edge="top" cls="top-1 left-1/2 -translate-x-1/2" Icon={ChevronUp} item={{ f, ...p }} />
+                <Handle edge="bottom" cls="bottom-1 left-1/2 -translate-x-1/2" Icon={ChevronDown} item={{ f, ...p }} />
+                <Handle edge="left" cls="left-1 top-1/2 -translate-y-1/2" Icon={ChevronLeft} item={{ f, ...p }} />
+                <Handle edge="right" cls="right-1 top-1/2 -translate-y-1/2" Icon={ChevronRight} item={{ f, ...p }} />
+              </>
+            )}
+          </div>
+        );
+      })}
+      {dragRef.current && dragRef.current.mode === 'resize' && (
+        <div className="absolute left-0 right-0 pointer-events-none" style={{ top: totalH - 1, height: 2, background: 'hsl(var(--foreground))' }} />
+      )}
+    </div>
+  );
+}

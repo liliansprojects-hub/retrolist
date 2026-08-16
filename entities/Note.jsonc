@@ -1,0 +1,63 @@
+{
+  "name": "Note",
+  "type": "object",
+  "properties": {
+    "local_id": {
+      "type": "string",
+      "description": "local storage record id used for matching during sync"
+    },
+    "username": {
+      "type": "string",
+      "description": "local account username this record belongs to (data partition key)"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "folder",
+        "journal",
+        "event",
+        "map_folder",
+        "period",
+        "profile",
+        "account",
+        "account_reset",
+        "email_confirm"
+      ],
+      "default": "folder",
+      "description": "which local data collection this record belongs to"
+    },
+    "payload": {
+      "type": "object",
+      "description": "the full record data as stored in local storage"
+    },
+    "local_updated_at": {
+      "type": "number",
+      "default": 0,
+      "description": "timestamp of the last local update, used for conflict resolution"
+    },
+    "is_deleted": {
+      "type": "boolean",
+      "default": false,
+      "description": "soft delete flag so deletions propagate across devices"
+    }
+  },
+  "required": [
+    "local_id",
+    "kind",
+    "payload"
+  ],
+  "rls": {
+    "read": {
+      "created_by_id": "{{user.id}}"
+    },
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "update": {
+      "created_by_id": "{{user.id}}"
+    },
+    "delete": {
+      "created_by_id": "{{user.id}}"
+    }
+  }
+}
