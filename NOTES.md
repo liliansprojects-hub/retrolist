@@ -44,6 +44,25 @@ project structure, with the injected export-tool junk removed.
    in `cloudSync.js` → the `forgotPassword`/`resetPassword` functions
    above). Safe to delete, or ignore.
 
+6. **Corrected several misplaced files after Netlify build errors caught
+   them** — these were reorganization mistakes on my part, not anything
+   wrong with your original export:
+   - `AuthContext.jsx`, `LocalAuthContext.jsx`, `SyncContext.jsx` moved
+     from a (wrong) `src/context/` folder into `src/lib/` — every import
+     across the whole codebase expects them there.
+   - `PageNotFound.jsx` moved from `src/pages/` into `src/lib/`, matching
+     `App.jsx`'s `./lib/PageNotFound` import.
+   - `Layout.jsx` moved from `src/` root into `src/components/`.
+   - `functions/*.ts` restructured from flat files into per-function
+     subfolders (`functions/forgotPassword/entry.ts`, etc.) — this
+     matches Base44's real convention (confirmed against your old proper
+     export) and is required for the `../../shared/...` relative imports
+     inside each function to resolve correctly.
+
+   Every relative and `@/` import across the entire `src/` tree (223
+   total) was then verified programmatically to resolve to a real file —
+   not just spot-checked.
+
 ## What still blocks a real Netlify deployment
 
 This is the honest part. Even cleaned up, this code cannot run
