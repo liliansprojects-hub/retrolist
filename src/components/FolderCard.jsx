@@ -75,9 +75,9 @@ export default function FolderCard({ folder, onClick, onMenu, fill }) {
         </button>
       )}
 
-      {/* info */}
+      {/* info — vertically centred in the cover, not bottom-anchored */}
       {!isReminder && (
-        <div className="absolute bottom-0 inset-x-0 p-4 pb-5" style={{ color: coverPhoto ? '#fff' : textColor }}>
+        <div className="absolute inset-0 flex flex-col justify-center items-start p-4" style={{ color: coverPhoto ? '#fff' : textColor }}>
           <h3 className="text-base font-extrabold lowercase leading-tight line-clamp-2">
             {folder.name}
           </h3>

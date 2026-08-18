@@ -61,13 +61,23 @@ export default function ItemRow({ item, folderType, onUpdate, onOpen }) {
 
   return (
     <div
-      className={cn('relative rounded-2xl overflow-hidden transition-all', padY, minH, !hasColor && 'border border-border')}
+      className={cn('relative rounded-2xl overflow-hidden transition-all', padY, minH, !hasColor && 'border border-border', (tipLeft || tipRight) && 'shadow-sm shadow-foreground/10')}
       style={bg}
     >
-      {tipLeft && <span className="absolute left-2.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />}
-      {tipRight && <span className="absolute right-2.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />}
+      {tipLeft && (
+        <span
+          className="absolute left-0 top-0 bottom-0 rounded-r-full"
+          style={{ width: 'max(16.6%, 22px)', backgroundColor: item.color, opacity: 0.55 }}
+        />
+      )}
+      {tipRight && (
+        <span
+          className="absolute right-0 top-0 bottom-0 rounded-l-full"
+          style={{ width: 'max(16.6%, 22px)', backgroundColor: item.color, opacity: 0.55 }}
+        />
+      )}
       <div
-        className={cn('relative flex flex-col justify-center', tipLeft ? 'pl-7 pr-3' : tipRight ? 'pl-3 pr-7' : 'px-3')}
+        className={cn('relative flex flex-col justify-center h-full', tipLeft ? 'pl-8 pr-3.5' : tipRight ? 'pl-3.5 pr-8' : 'pl-4 pr-3.5')}
         style={contentColor ? { color: contentColor } : undefined}
       >
         <div className="flex items-center gap-2">
@@ -98,7 +108,7 @@ export default function ItemRow({ item, folderType, onUpdate, onOpen }) {
           </button>
         </div>
         {(meta.length > 0 || mediaCount > 0) && (
-          <div className={cn('flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0 text-[11px] lowercase', isTodo || isChecklist ? 'pl-8' : 'pl-0', isFull ? '' : 'text-muted-foreground')}>
+          <div className={cn('flex flex-wrap items-center gap-x-2 gap-y-0.5 -mt-0.5 leading-none text-[11px] lowercase', isTodo || isChecklist ? 'pl-8' : 'pl-1', isFull ? '' : 'text-muted-foreground')}>
             {meta.map((m, i) => (
               <span key={i} className="whitespace-nowrap">{m}{i < meta.length - 1 ? ' ·' : ''}</span>
             ))}

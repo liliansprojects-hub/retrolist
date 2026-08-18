@@ -18,7 +18,23 @@ import EventModal from '@/components/EventModal';
 import AlarmModal from '@/components/AlarmModal';
 import ReminderModal from '@/components/ReminderModal';
 import ShareDialog from '@/components/ShareDialog';
+import ItemEditor from '@/components/ItemEditor';
 import { ALL_ITEM_KINDS } from '@/components/AddItemPicker';
+import { addItem, updateItem, deleteItem, getFolder } from '@/lib/store';
+
+// item kind -> the list type that actually owns that kind's tailored fields
+// (year, reps/times, amount, etc. all live on ItemEditor keyed by folderType).
+// items have no standalone existence outside a list, so creating one from the
+// main page's + wheel transparently makes/opens its real matching list.
+const ITEM_KIND_TO_FOLDER_TYPE = {
+  todo: 'todo', checklist: 'todo', list: 'list', note: 'list',
+  movie: 'movie', series: 'movie', drama: 'movie',
+  book: 'book', audiobook: 'book', magazine: 'book', article: 'book',
+  aspiration: 'aspiration', role: 'aspiration', programme: 'aspiration', course: 'aspiration',
+  exercise: 'habit', saving: 'habit', habit: 'habit',
+  hobby: 'hobby', interest: 'hobby', sport: 'hobby', arts: 'hobby', language: 'hobby', skills: 'hobby',
+  place: 'place',
+};
 
 export default function Home() {
   const navigate = useNavigate();
@@ -40,6 +56,7 @@ export default function Home() {
   const [picker, setPicker] = useState(null); // { mode, folder }
   const [filterOpen, setFilterOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [quickItem, setQuickItem] = useState(null); // { item, folderId, wrapperAutoCreated }
 
   const refresh = () => {
     setFolders(getRootFolders());
@@ -93,7 +110,39 @@ export default function Home() {
       setReminderFolder(null);
       return;
     }
+    const isItemKind = ALL_ITEM_KINDS.some((k) => k.kind === value);
+    if (isItemKind) {
+      // no standalone items on the main page — make (or would-reuse, if we
+      // ever add matching later) the real list this kind belongs to, add the
+      // item inside it, then open the same tailored ItemEditor a folder would
+      // use, so "exercise" gets reps/times, "movie" gets a year field, etc.
+      const folderType = ITEM_KIND_TO_FOLDER_TYPE[value] || 'list';
+      const wrapper = addFolder({ name: 'new ' + (LIST_TYPES[folderType]?.label || folderType) + ' list', type: folderType });
+      const it = addItem(wrapper.id, { text: '', kind: value });
+      setQuickItem({ item: { ...it, __isNew: true }, folderId: wrapper.id, folderType, wrapperAutoCreated: true });
+      refresh();
+      return;
+    }
     setCreateType(value);
+  };
+
+  const handleQuickItemSave = (data) => {
+    if (!quickItem) return;
+    updateItem(quickItem.folderId, quickItem.item.id, data);
+    setQuickItem(null);
+    refresh();
+    navigate(`/folder/${quickItem.folderId}`);
+  };
+  const handleQuickItemDelete = () => {
+    if (!quickItem) return;
+    deleteItem(quickItem.folderId, quickItem.item.id);
+    // clean up the auto-created wrapper list if it ended up empty (user cancelled)
+    if (quickItem.wrapperAutoCreated) {
+      const wrapperNow = getFolder(quickItem.folderId);
+      if (wrapperNow && (wrapperNow.items || []).length === 0) deleteFolder(quickItem.folderId);
+    }
+    setQuickItem(null);
+    refresh();
   };
 
   const handleCreate = (data) => {
@@ -154,7 +203,8 @@ export default function Home() {
   })();
 
   return (
-    <div className="safe-top px-6 sm:px-8 pb-4 min-h-screen">
+    <div className="safe-top min-h-screen">
+      <div className="sticky top-0 z-30 bg-background px-6 sm:px-8 pt-[env(safe-area-inset-top)] pb-3 border-b border-border/0">
       <header className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-3xl font-extrabold lowercase tracking-tight">retrolist</h1>
@@ -215,6 +265,52 @@ export default function Home() {
         </div>
       )}
 
+      {folders.length > 0 && (
+        <div className="pb-1 flex items-center gap-2">
+          <button
+            onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
+            className="touch-44 shrink-0 flex items-center gap-1 px-3 h-7 rounded-full bg-muted text-[10px] font-medium lowercase"
+          >
+            <ArrowDownUp className="w-3 h-3" /> {sortDir === 'desc' ? 'newest' : 'oldest'}
+          </button>
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setFilterOpen((o) => !o)}
+              className="touch-44 flex items-center gap-1.5 pl-3 pr-2 h-7 rounded-full bg-muted text-[10px] font-medium lowercase"
+            >
+              {filterKey === 'all' ? 'all types' : filterKey}
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {filterOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setFilterOpen(false)} />
+                <div className="absolute z-20 mt-1 left-0 min-w-[120px] rounded-2xl border border-border bg-popover shadow-lg overflow-hidden animate-fade-in">
+                  {FILTERS.map((key) => (
+                    <button
+                      key={key}
+                      onClick={() => { setFilterKey(key); setFilterOpen(false); }}
+                      className={`touch-44 w-full text-left px-3 py-2 text-[11px] lowercase ${filterKey === key ? 'bg-foreground text-background font-medium' : 'hover:bg-muted'}`}
+                    >
+                      {key === 'all' ? 'all types' : key}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          {layout === 'blocks' && visibleFolders.length > 0 && (
+            <button
+              onClick={() => setEditMode((e) => !e)}
+              className={`touch-44 shrink-0 flex items-center gap-1 px-3 h-7 rounded-full text-[10px] font-medium lowercase ${editMode ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`}
+            >
+              {editMode ? 'done' : 'resize'}
+            </button>
+          )}
+        </div>
+      )}
+      </div>
+
+      <div className="px-6 sm:px-8 pb-4 pt-3">
       {folders.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <svg className="w-20 h-20 text-muted-foreground/20 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
@@ -227,47 +323,6 @@ export default function Home() {
         </div>
       ) : (
         <>
-          <div className="mb-4 flex items-center gap-2">
-            <button
-              onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
-              className="touch-44 shrink-0 flex items-center gap-1 px-3 h-7 rounded-full bg-muted text-[10px] font-medium lowercase"
-            >
-              <ArrowDownUp className="w-3 h-3" /> {sortDir === 'desc' ? 'newest' : 'oldest'}
-            </button>
-            <div className="relative shrink-0">
-              <button
-                onClick={() => setFilterOpen((o) => !o)}
-                className="touch-44 flex items-center gap-1.5 pl-3 pr-2 h-7 rounded-full bg-muted text-[10px] font-medium lowercase"
-              >
-                {filterKey === 'all' ? 'all types' : filterKey}
-                <ChevronDown className="w-3 h-3" />
-              </button>
-              {filterOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setFilterOpen(false)} />
-                  <div className="absolute z-20 mt-1 left-0 min-w-[120px] rounded-2xl border border-border bg-popover shadow-lg overflow-hidden animate-fade-in">
-                    {FILTERS.map((key) => (
-                      <button
-                        key={key}
-                        onClick={() => { setFilterKey(key); setFilterOpen(false); }}
-                        className={`touch-44 w-full text-left px-3 py-2 text-[11px] lowercase ${filterKey === key ? 'bg-foreground text-background font-medium' : 'hover:bg-muted'}`}
-                      >
-                        {key === 'all' ? 'all types' : key}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-            {layout === 'blocks' && visibleFolders.length > 0 && (
-              <button
-                onClick={() => setEditMode((e) => !e)}
-                className={`touch-44 shrink-0 flex items-center gap-1 px-3 h-7 rounded-full text-[10px] font-medium lowercase ${editMode ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`}
-              >
-                {editMode ? 'done' : 'resize'}
-              </button>
-            )}
-          </div>
           {editMode && layout === 'blocks' && (
             <p className="mb-3 text-[11px] text-muted-foreground lowercase">drag any edge to resize · others auto-shift</p>
           )}
@@ -305,8 +360,19 @@ export default function Home() {
           )}
         </>
       )}
+      </div>
 
       <PlusWheel groups={wheelGroups} onSelect={handleSelect} />
+
+      {quickItem && (
+        <ItemEditor
+          item={quickItem.item}
+          folderType={quickItem.folderType}
+          onClose={() => setQuickItem(null)}
+          onSave={handleQuickItemSave}
+          onDelete={handleQuickItemDelete}
+        />
+      )}
 
       <FolderEditModal
         open={!!createType}

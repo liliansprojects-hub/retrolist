@@ -3,6 +3,7 @@ import { X, Play, Trash2, Upload, Music } from 'lucide-react';
 import { SOUNDS, VIBRATIONS, preview, stopAll } from '@/lib/alarmAudio';
 import { getSettings, getCustomTracks, addCustomTrack, deleteCustomTrack } from '@/lib/store';
 import { cn } from '@/lib/utils';
+import ColorPicker from '@/components/ColorPicker';
 
 const DAY_LABELS = ['s', 'm', 't', 'w', 't', 'f', 's'];
 
@@ -63,6 +64,7 @@ export default function AlarmModal({ open, onClose, onSave, onDelete, alarm }) {
   const [vibration, setVibration] = useState('default');
   const [snooze, setSnooze] = useState(5);
   const [format, setFormat] = useState('24h');
+  const [color, setColor] = useState('');
   const [tracks, setTracks] = useState([]);
   const fileRef = useRef(null);
 
@@ -79,6 +81,7 @@ export default function AlarmModal({ open, onClose, onSave, onDelete, alarm }) {
       setVibration(alarm?.vibration || s.defaultVibration || 'default');
       setSnooze(alarm?.snooze || s.defaultSnooze || 5);
       setFormat(s.clockFormat || '24h');
+      setColor(alarm?.color || '');
       refreshTracks();
     }
     return () => { stopAll(); };
@@ -99,6 +102,7 @@ export default function AlarmModal({ open, onClose, onSave, onDelete, alarm }) {
       sound,
       vibration,
       snooze: Number(snooze) || 5,
+      color,
       enabled: alarm ? alarm.enabled : true,
     });
   };
@@ -262,6 +266,8 @@ export default function AlarmModal({ open, onClose, onSave, onDelete, alarm }) {
               ))}
             </div>
           </div>
+
+          <ColorPicker value={color} onChange={setColor} label="alarm colour" />
         </div>
 
         <p className="text-[10px] text-muted-foreground/60 lowercase text-center mt-6">

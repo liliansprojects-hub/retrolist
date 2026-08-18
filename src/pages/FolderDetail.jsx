@@ -148,7 +148,7 @@ export default function FolderDetail() {
               className="w-8 h-8 rounded-full bg-foreground text-background flex items-center justify-center"
               aria-label="new list or folder"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <ListPlus className="w-4 h-4" />
             </button>
             <button
               onClick={() => updateFolder(id, { pinned: !folder.pinned })}

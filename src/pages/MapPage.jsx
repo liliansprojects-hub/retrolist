@@ -284,9 +284,23 @@ export default function MapPage() {
 
   return (
     <div className="safe-top px-4 pb-4 min-h-screen">
-      <header className="mb-4">
-        <h1 className="text-3xl font-extrabold lowercase tracking-tight">map</h1>
-        <p className="text-sm text-muted-foreground lowercase mt-0.5">places you want to go</p>
+      <header className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-extrabold lowercase tracking-tight">map</h1>
+          <p className="text-sm text-muted-foreground lowercase mt-0.5">places you want to go</p>
+        </div>
+        <button
+          onClick={() => { setAddingTo(folders[0]?.id || '__pick__'); setPlaceForm({ name: '', subheading: '', address: '', url: '', notes: '', color: '' }); }}
+          disabled={folders.length === 0}
+          className="touch-44 shrink-0 flex items-center gap-1 pl-2.5 pr-3 h-9 rounded-full bg-foreground text-background text-xs font-medium lowercase disabled:opacity-40 mt-1"
+          aria-label="add place"
+        >
+          <span className="relative w-4 h-4 shrink-0">
+            <MapPin className="w-4 h-4" />
+            <Plus className="w-2.5 h-2.5 absolute -right-1 -bottom-1 bg-foreground rounded-full" strokeWidth={3} />
+          </span>
+          add place
+        </button>
       </header>
 
       {/* folder filter chips (multi-select) */}
@@ -337,7 +351,7 @@ export default function MapPage() {
         {folders.map((folder) => {
           const hidden = activeFolders !== null && !activeFolders.includes(folder.id);
           return (
-            <div key={folder.id} className={`rounded-2xl border border-border overflow-hidden ${hidden ? 'opacity-40' : ''}`} style={{ borderLeft: `4px solid ${folder.color || '#888'}` }}>
+            <div key={folder.id} className={`rounded-2xl border border-border overflow-hidden ${hidden ? 'opacity-40' : ''}`} style={{ borderLeft: `6px solid ${folder.color || '#888'}` }}>
               <div className="flex items-center gap-1.5 p-3">
                 <button
                   onClick={() => setExpanded({ ...expanded, [folder.id]: !expanded[folder.id] })}
@@ -345,14 +359,14 @@ export default function MapPage() {
                 >
                   {expanded[folder.id] ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                 </button>
-                <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: folder.color || '#888' }} />
+                <span className="w-3 h-3 rounded-full shrink-0 mr-1.5" style={{ backgroundColor: folder.color || '#888' }} />
                 <span className="flex-1 min-w-0">
                   <span className="block text-sm font-semibold lowercase truncate">{folder.name}</span>
                   {folder.subtitle && <span className="block text-[11px] text-muted-foreground lowercase truncate -mt-0.5">{folder.subtitle}</span>}
                 </span>
                 <span className="text-xs text-muted-foreground shrink-0">{folder.places?.length || 0}</span>
                 <button
-                  onClick={() => setAddingTo(addingTo === folder.id ? null : folder.id)}
+                  onClick={() => { setAddingTo(folder.id); setPlaceForm({ name: '', subheading: '', address: '', url: '', notes: '', color: '' }); }}
                   className="touch-44 w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0"
                 >
                   <Plus className="w-4 h-4" />
@@ -431,49 +445,6 @@ export default function MapPage() {
                   )}
                 </div>
               )}
-
-              {addingTo === folder.id && (
-                <div className="px-3 pb-3 space-y-2 animate-slide-up">
-                  <input
-                    value={placeForm.name}
-                    onChange={(e) => setPlaceForm({ ...placeForm, name: e.target.value })}
-                    placeholder="place name"
-                    className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground"
-                  />
-                  <input
-                    value={placeForm.url}
-                    onChange={(e) => setPlaceForm({ ...placeForm, url: e.target.value })}
-                    placeholder="paste google maps link"
-                    className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground"
-                  />
-                  <input
-                    value={placeForm.subheading}
-                    onChange={(e) => setPlaceForm({ ...placeForm, subheading: e.target.value })}
-                    placeholder="subheading"
-                    className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground"
-                  />
-                  <input
-                    value={placeForm.address}
-                    onChange={(e) => setPlaceForm({ ...placeForm, address: e.target.value })}
-                    placeholder="or type address"
-                    className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground"
-                  />
-                  <textarea
-                    value={placeForm.notes}
-                    onChange={(e) => setPlaceForm({ ...placeForm, notes: e.target.value })}
-                    placeholder="notes (optional)"
-                    rows={2}
-                    className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground resize-none"
-                  />
-                  <button
-                    onClick={() => handleAddPlace(folder.id)}
-                    disabled={resolving}
-                    className="touch-44 w-full py-2.5 rounded-xl bg-foreground text-background text-sm font-medium lowercase disabled:opacity-50"
-                  >
-                    {resolving ? 'locating…' : 'add place'}
-                  </button>
-                </div>
-              )}
             </div>
           );
         })}
@@ -507,6 +478,18 @@ export default function MapPage() {
         </button>
       )}
 
+      {addingTo && (
+        <AddPlaceModal
+          folders={folders}
+          defaultFolderId={addingTo === '__pick__' ? (folders[0]?.id || '') : addingTo}
+          form={placeForm}
+          setForm={setPlaceForm}
+          resolving={resolving}
+          onClose={() => setAddingTo(null)}
+          onSubmit={(folderId) => handleAddPlace(folderId)}
+        />
+      )}
+
       {editingPlace && (
         <PlaceEditor
           folderId={editingPlace.folderId}
@@ -525,6 +508,74 @@ export default function MapPage() {
           onDelete={() => { deleteMapFolder(editingFolder.id); setEditingFolder(null); refresh(); }}
         />
       )}
+    </div>
+  );
+}
+
+function AddPlaceModal({ folders, defaultFolderId, form, setForm, resolving, onClose, onSubmit }) {
+  const [folderId, setFolderId] = useState(defaultFolderId);
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-[1000] flex justify-center" onClick={onClose}>
+      <div className="relative w-full max-w-lg max-h-[80vh] overflow-y-auto no-scrollbar bg-card rounded-t-3xl border-t border-border p-5 pb-8 animate-slide-up shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="w-10 h-1 rounded-full bg-muted mx-auto mb-4" />
+        <div className="flex items-center justify-between mb-4">
+          <button onClick={onClose} className="touch-44 flex items-center gap-1 text-xs font-medium lowercase text-muted-foreground">
+            <ChevronLeft className="w-4 h-4" /> back
+          </button>
+          <h3 className="text-sm font-semibold lowercase">add place</h3>
+          <span className="w-9" />
+        </div>
+        <div className="space-y-3">
+          {folders.length > 1 && (
+            <select
+              value={folderId}
+              onChange={(e) => setFolderId(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground lowercase"
+            >
+              {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+          )}
+          <input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            placeholder="place name"
+            autoFocus
+            className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground"
+          />
+          <input
+            value={form.url}
+            onChange={(e) => setForm({ ...form, url: e.target.value })}
+            placeholder="paste google maps link"
+            className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground"
+          />
+          <input
+            value={form.subheading}
+            onChange={(e) => setForm({ ...form, subheading: e.target.value })}
+            placeholder="subheading"
+            className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground"
+          />
+          <input
+            value={form.address}
+            onChange={(e) => setForm({ ...form, address: e.target.value })}
+            placeholder="or type a regular address"
+            className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground"
+          />
+          <textarea
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            placeholder="notes (optional)"
+            rows={2}
+            className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground resize-none"
+          />
+        </div>
+        <button
+          onClick={() => onSubmit(folderId)}
+          disabled={resolving || !folderId}
+          className="touch-44 w-full mt-5 py-3 rounded-2xl bg-foreground text-background text-sm font-medium lowercase disabled:opacity-50"
+        >
+          {resolving ? 'locating…' : 'add place'}
+        </button>
+      </div>
     </div>
   );
 }

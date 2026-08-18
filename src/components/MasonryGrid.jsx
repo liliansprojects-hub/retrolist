@@ -96,7 +96,7 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
   });
 
   const packItems = items.slice().sort((a, b) => a.order - b.order);
-  if (dragRef.current) {
+  if (dragRef.current && dragRef.current.mode === 'resize') {
     const idx = packItems.findIndex((it) => it.id === dragRef.current.id);
     if (idx >= 0) packItems[idx] = { ...packItems[idx], w: dragRef.current.w, h: dragRef.current.h };
   }
@@ -129,17 +129,28 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
       rerender();
       const cur = placedRef.current;
       const all = foldersRef.current;
-      const over = cur.find((p) => p.id !== d.id && lastX >= p.x && lastX <= p.x + p.w && lastY >= p.y && lastY <= p.y + p.h);
-      if (over) {
-        const ids = all.map((f) => f.id);
-        const orders = all.map((f, i) => f.order != null ? f.order : i);
-        const sorted = ids.map((id, i) => ({ id, o: orders[i] })).sort((a, b) => a.o - b.o).map((s) => s.id);
+      const ids = all.map((f) => f.id);
+      const orders = all.map((f, i) => f.order != null ? f.order : i);
+      const sorted = ids.map((id, i) => ({ id, o: orders[i] })).sort((a, b) => a.o - b.o).map((s) => s.id);
+      const others = cur.filter((p) => p.id !== d.id);
+      const over = others.find((p) => lastX >= p.x && lastX <= p.x + p.w && lastY >= p.y && lastY <= p.y + p.h);
+      const bottomMost = others.reduce((m, p) => Math.max(m, p.y + p.h), 0);
+      // dropped into genuine empty space (below every block, or past the end
+      // of the last row) — place it at the end instead of snapping back with
+      // nothing happening.
+      const droppedInEmptySpace = !over && (lastY > bottomMost || others.length === 0);
+      if (over || droppedInEmptySpace) {
         const fromIdx = sorted.indexOf(d.id);
         if (fromIdx >= 0) {
           sorted.splice(fromIdx, 1);
-          const above = lastY < over.y + over.h / 2;
-          let insertAt = sorted.indexOf(over.id);
-          if (!above) insertAt += 1;
+          let insertAt;
+          if (over) {
+            const above = lastY < over.y + over.h / 2;
+            insertAt = sorted.indexOf(over.id);
+            if (!above) insertAt += 1;
+          } else {
+            insertAt = sorted.length; // empty space below everything -> goes last
+          }
           if (insertAt === d.lastInsert) return;
           sorted.splice(insertAt, 0, d.id);
           const map = {};

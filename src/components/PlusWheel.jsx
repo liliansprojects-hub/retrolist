@@ -3,9 +3,13 @@ import { Plus, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // long-press opens the original radial "wheel" (all creatable options fanned
-// out in an arc, well clear of the screen edges); a quick tap opens the
-// grouped bottom-sheet panel instead. both read from the same `groups` prop.
-const WHEEL_MARGIN = 40; // px kept clear from every screen edge, on purpose "wide"
+// out in a circular arc around the +/x button itself, not the screen
+// center); a quick tap opens the grouped bottom-sheet panel instead. both
+// read from the same `groups` prop.
+const WHEEL_MARGIN = 40; // px kept clear from every screen edge
+const ITEM_GAP = 14; // minimum px gap between adjacent wheel items
+const BUTTON_SIZE = 56; // matches w-14/h-14 on the trigger button
+const BUTTON_CLEARANCE = 18; // gap between the button's own edge and the ring
 
 export default function PlusWheel({ groups, onSelect, position = 'bottom-center' }) {
   const [open, setOpen] = useState(false);
@@ -31,14 +35,43 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
   // wheel fans everything out at once rather than showing group sections.
   const wheelItems = (groups || []).flatMap((g) => g.items);
   const count = wheelItems.length;
-  const arc = Math.PI; // semicircle
-  const startAngle = Math.PI; // start pointing left, sweep to pointing right
+
+  // the wheel's origin is the button's own on-screen center (not the
+  // viewport center), so the ring genuinely wraps around the +/x button.
+  const originX = position === 'bottom-right' ? vp.w - 24 - BUTTON_SIZE / 2 : vp.w / 2;
+  const originY = vp.h - 96 - BUTTON_SIZE / 2;
 
   const minDim = Math.min(vp.w, vp.h);
-  const itemSize = minDim < 380 ? 52 : 60;
-  // radius sized so the farthest point of the farthest item still clears
-  // WHEEL_MARGIN px from any screen edge — no overshoot multiplier this time.
-  const radius = Math.max(70, Math.min(150, (minDim - itemSize) / 2 - WHEEL_MARGIN));
+  let itemSize = minDim < 380 ? 48 : 56;
+
+  // sweep angle: a wide arc (~210°) centered straight up from the button —
+  // reads as a circle wrapping around the button, without dipping items
+  // below it where they'd collide with the button itself.
+  const ARC = Math.PI * 1.18;
+  const angularStep = count > 1 ? ARC / (count - 1) : 0;
+
+  // radius must satisfy three things at once: clear the button itself,
+  // keep adjacent items ITEM_GAP apart, and stay WHEEL_MARGIN clear of
+  // every screen edge. shrink itemSize as a last resort if a small screen
+  // genuinely can't fit everything at comfortable spacing.
+  const clearanceRadius = BUTTON_SIZE / 2 + BUTTON_CLEARANCE + itemSize / 2;
+  const spacingRadius = angularStep > 0 ? (itemSize + ITEM_GAP) / (2 * Math.sin(angularStep / 2)) : clearanceRadius;
+  const sideClearance = Math.max(40, Math.min(originX, vp.w - originX) - WHEEL_MARGIN);
+  const capRadiusX = Math.sin(Math.min(ARC / 2, Math.PI / 2)) > 0.01
+    ? sideClearance / Math.sin(Math.min(ARC / 2, Math.PI / 2))
+    : sideClearance;
+  const capRadiusY = Math.max(40, originY - WHEEL_MARGIN);
+  const maxRadius = Math.min(capRadiusX, capRadiusY);
+
+  let radius = Math.max(clearanceRadius, spacingRadius);
+  if (radius > maxRadius && spacingRadius > clearanceRadius) {
+    // shrink items proportionally so the required spacing still fits
+    const shrink = Math.max(0.6, maxRadius / spacingRadius);
+    itemSize = itemSize * shrink;
+    radius = Math.max(clearanceRadius * shrink, maxRadius);
+  } else {
+    radius = Math.min(radius, maxRadius);
+  }
 
   const handlePressStart = () => {
     longPressTimer.current = setTimeout(() => {
@@ -105,7 +138,7 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
           <div className="absolute inset-0 bg-background/60 backdrop-blur-sm animate-fade-in" />
 
           {wheelMode ? (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
+            <div className="absolute inset-0 pointer-events-none overflow-hidden">
               {/* close button stays reachable even though items are fanned across the screen */}
               <button
                 onClick={(e) => { e.stopPropagation(); close(); }}
@@ -114,9 +147,12 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
                 <X className="w-4 h-4" />
               </button>
               {wheelItems.map((item, i) => {
-                const angle = startAngle + (count > 1 ? (i / (count - 1)) * arc : arc / 2);
-                const x = Math.cos(angle) * radius;
-                const y = Math.sin(angle) * radius;
+                // angleFromUp: 0 = straight up from the button, spreading
+                // outward left/right — keeps the ring above/around the
+                // button instead of dipping into it.
+                const angleFromUp = count > 1 ? (i / (count - 1) - 0.5) * ARC : 0;
+                const x = originX + Math.sin(angleFromUp) * radius;
+                const y = originY - Math.cos(angleFromUp) * radius;
                 const delay = i * 0.03;
                 return (
                   <button
@@ -126,7 +162,8 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
                     style={{
                       width: itemSize,
                       height: itemSize,
-                      transform: `translate(${x}px, ${y}px)`,
+                      left: x - itemSize / 2,
+                      top: y - itemSize / 2,
                       opacity: animating ? 0 : 1,
                       animation: `scale-in 0.3s ease ${delay}s both`,
                       transitionDelay: `${delay}s`,

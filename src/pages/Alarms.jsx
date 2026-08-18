@@ -70,7 +70,11 @@ export default function Alarms() {
             const next = a.enabled ? nextTrigger(a, now) : null;
             const diff = next ? next.getTime() - now.getTime() : null;
             return (
-              <div key={a.id} className={cn('rounded-2xl border border-border p-4', !a.enabled && 'opacity-50')}>
+              <div
+                key={a.id}
+                className={cn('rounded-2xl border border-border p-4', !a.enabled && 'opacity-50')}
+                style={a.color ? { borderLeft: `6px solid ${a.color}` } : undefined}
+              >
                 <div className="flex items-center justify-between gap-3">
                   <button onClick={() => openEdit(a)} className="flex-1 text-left">
                     <div className="flex items-baseline gap-2">
