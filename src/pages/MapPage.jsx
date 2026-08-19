@@ -63,6 +63,18 @@ async function resolveShortLink(url) {
   }
 }
 
+async function resolveCoords({ url, address }) {
+  let coords = null;
+  if (url) {
+    const parsed = parseMapsUrl(url);
+    if (parsed?.lat) coords = parsed;
+    else if (parsed?.placeName) coords = await geocode(parsed.placeName);
+    if (!coords && /goo\.gl|maps\.app/i.test(url)) coords = await resolveShortLink(url);
+  }
+  if (!coords && address) coords = await geocode(address);
+  return coords;
+}
+
 function coloredIcon(color) {
   return L.divIcon({
     className: '',
@@ -189,11 +201,9 @@ export default function MapPage() {
       let changed = false;
       for (const folder of folders) {
         for (const place of folder.places || []) {
-          if (place.lat || !place.url) continue;
-          const parsed = parseMapsUrl(place.url);
-          let coords = parsed?.lat ? parsed : null;
-          if (!coords && parsed?.placeName) coords = await geocode(parsed.placeName);
-          if (!coords && /goo\.gl|maps\.app/i.test(place.url)) coords = await resolveShortLink(place.url);
+          if (place.lat) continue;
+          if (!place.url && !place.address) continue;
+          const coords = await resolveCoords({ url: place.url, address: place.address });
           if (coords?.lat && !cancelled) {
             place.lat = coords.lat;
             place.lng = coords.lng;
@@ -241,66 +251,41 @@ export default function MapPage() {
 
   const [resolving, setResolving] = useState(false);
 
-  const handleAddPlace = async (folderId) => {
-    const { name, subheading, address, url, notes } = placeForm;
-    if (!name.trim() && !url.trim()) return;
-
-    setResolving(true);
-    let coords = null;
-    if (url) {
-      const parsed = parseMapsUrl(url);
-      if (parsed?.lat) coords = parsed;
-      else if (parsed?.placeName) coords = await geocode(parsed.placeName);
-      if (!coords && /goo\.gl|maps\.app/i.test(url)) coords = await resolveShortLink(url);
+  const handlePlaceSave = async (folderId, placeId, data) => {
+    if (!folderId) return;
+    if (placeId) {
+      updatePlace(folderId, placeId, data);
+      setEditingPlace(null);
+      refresh();
+      return;
     }
-    if (!coords && address) coords = await geocode(address);
+    if (!data.name?.trim() && !data.url?.trim()) return;
+    setResolving(true);
+    const coords = await resolveCoords({ url: data.url, address: data.address });
     setResolving(false);
-
     const created = addPlace(folderId, {
-      name: name.trim() || 'unnamed place',
-      subheading: subheading.trim(),
-      address: address.trim(),
-      url: url.trim(),
-      notes: notes.trim(),
-      photo: null,
-      color: placeForm.color || '',
+      name: data.name.trim() || 'unnamed place',
+      subheading: data.subheading?.trim() || '',
+      address: data.address?.trim() || '',
+      url: data.url?.trim() || '',
+      notes: data.notes?.trim() || '',
+      photo: data.photo || null,
+      color: data.color || '',
       lat: coords?.lat || null,
       lng: coords?.lng || null,
     });
-
-    setPlaceForm({ name: '', subheading: '', address: '', url: '', notes: '', color: '' });
-    setAddingTo(null);
-    refresh();
-    if (created && coords?.lat) setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
-  };
-
-  const handleSavePlace = (folderId, placeId, data) => {
-    updatePlace(folderId, placeId, data);
     setEditingPlace(null);
     refresh();
+    if (created && coords?.lat) setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
   };
 
   const center = mappedPlaces[0] ? [mappedPlaces[0].lat, mappedPlaces[0].lng] : [51.505, -0.09];
 
   return (
     <div className="safe-top px-4 pb-4 min-h-screen">
-      <header className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-extrabold lowercase tracking-tight">map</h1>
-          <p className="text-sm text-muted-foreground lowercase mt-0.5">places you want to go</p>
-        </div>
-        <button
-          onClick={() => { setAddingTo(folders[0]?.id || '__pick__'); setPlaceForm({ name: '', subheading: '', address: '', url: '', notes: '', color: '' }); }}
-          disabled={folders.length === 0}
-          className="touch-44 shrink-0 flex items-center gap-1 pl-2.5 pr-3 h-9 rounded-full bg-foreground text-background text-xs font-medium lowercase disabled:opacity-40 mt-1"
-          aria-label="add place"
-        >
-          <span className="relative w-4 h-4 shrink-0">
-            <MapPin className="w-4 h-4" />
-            <Plus className="w-2.5 h-2.5 absolute -right-1 -bottom-1 bg-foreground rounded-full" strokeWidth={3} />
-          </span>
-          add place
-        </button>
+      <header className="mb-4">
+        <h1 className="text-3xl font-extrabold lowercase tracking-tight">map</h1>
+        <p className="text-sm text-muted-foreground lowercase mt-0.5">places you want to go</p>
       </header>
 
       {/* folder filter chips (multi-select) */}
@@ -351,22 +336,26 @@ export default function MapPage() {
         {folders.map((folder) => {
           const hidden = activeFolders !== null && !activeFolders.includes(folder.id);
           return (
-            <div key={folder.id} className={`rounded-2xl border border-border overflow-hidden ${hidden ? 'opacity-40' : ''}`} style={{ borderLeft: `6px solid ${folder.color || '#888'}` }}>
-              <div className="flex items-center gap-1.5 p-3">
+            <div key={folder.id} className={`rounded-2xl border border-border ${hidden ? 'opacity-40' : ''}`} style={{ borderLeft: `6px solid ${folder.color || '#888'}` }}>
+              {/* note: no overflow-hidden here (unlike a typical card) — the
+                  "..." dropdown below needs to render outside this folder's
+                  bounds when it's collapsed, and nothing else in this
+                  container needs edge clipping. */}
+              <div className="flex items-center gap-3 p-3">
                 <button
                   onClick={() => setExpanded({ ...expanded, [folder.id]: !expanded[folder.id] })}
                   className="touch-44 p-1 rounded-full shrink-0"
                 >
                   {expanded[folder.id] ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                 </button>
-                <span className="w-3 h-3 rounded-full shrink-0 mr-1.5" style={{ backgroundColor: folder.color || '#888' }} />
+                <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: folder.color || '#888' }} />
                 <span className="flex-1 min-w-0">
                   <span className="block text-sm font-semibold lowercase truncate">{folder.name}</span>
                   {folder.subtitle && <span className="block text-[11px] text-muted-foreground lowercase truncate -mt-0.5">{folder.subtitle}</span>}
                 </span>
                 <span className="text-xs text-muted-foreground shrink-0">{folder.places?.length || 0}</span>
                 <button
-                  onClick={() => { setAddingTo(folder.id); setPlaceForm({ name: '', subheading: '', address: '', url: '', notes: '', color: '' }); }}
+                  onClick={() => setEditingPlace({ folderId: folder.id, place: {} })}
                   className="touch-44 w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0"
                 >
                   <Plus className="w-4 h-4" />
@@ -445,6 +434,7 @@ export default function MapPage() {
                   )}
                 </div>
               )}
+
             </div>
           );
         })}
@@ -478,27 +468,26 @@ export default function MapPage() {
         </button>
       )}
 
-      {addingTo && (
-        <AddPlaceModal
-          folders={folders}
-          defaultFolderId={addingTo === '__pick__' ? (folders[0]?.id || '') : addingTo}
-          form={placeForm}
-          setForm={setPlaceForm}
-          resolving={resolving}
-          onClose={() => setAddingTo(null)}
-          onSubmit={(folderId) => handleAddPlace(folderId)}
-        />
-      )}
-
       {editingPlace && (
         <PlaceEditor
           folderId={editingPlace.folderId}
           place={editingPlace.place}
+          folders={folders}
           onClose={() => setEditingPlace(null)}
-          onSave={(data) => handleSavePlace(editingPlace.folderId, editingPlace.place.id, data)}
-          onDelete={() => { deletePlace(editingPlace.folderId, editingPlace.place.id); setEditingPlace(null); refresh(); }}
+          onSave={handlePlaceSave}
+          onDelete={editingPlace.place?.id ? () => { deletePlace(editingPlace.folderId, editingPlace.place.id); setEditingPlace(null); refresh(); } : undefined}
         />
       )}
+
+      <button
+        onClick={() => setEditingPlace({ folderId: folders[0]?.id || null, place: {} })}
+        className="fixed z-50 touch-44 flex items-center justify-center gap-1 w-16 h-14 rounded-full bg-foreground text-background shadow-lg shadow-foreground/20 active:scale-90 transition-transform icon-no-select"
+        style={{ bottom: '1.5rem', right: '1.5rem', touchAction: 'manipulation' }}
+        aria-label="add place"
+      >
+        <Plus className="w-5 h-5" />
+        <MapPin className="w-4 h-4" />
+      </button>
 
       {editingFolder && (
         <MapFolderEditor
@@ -508,74 +497,6 @@ export default function MapPage() {
           onDelete={() => { deleteMapFolder(editingFolder.id); setEditingFolder(null); refresh(); }}
         />
       )}
-    </div>
-  );
-}
-
-function AddPlaceModal({ folders, defaultFolderId, form, setForm, resolving, onClose, onSubmit }) {
-  const [folderId, setFolderId] = useState(defaultFolderId);
-  return (
-    <div className="fixed inset-x-0 bottom-0 z-[1000] flex justify-center" onClick={onClose}>
-      <div className="relative w-full max-w-lg max-h-[80vh] overflow-y-auto no-scrollbar bg-card rounded-t-3xl border-t border-border p-5 pb-8 animate-slide-up shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="w-10 h-1 rounded-full bg-muted mx-auto mb-4" />
-        <div className="flex items-center justify-between mb-4">
-          <button onClick={onClose} className="touch-44 flex items-center gap-1 text-xs font-medium lowercase text-muted-foreground">
-            <ChevronLeft className="w-4 h-4" /> back
-          </button>
-          <h3 className="text-sm font-semibold lowercase">add place</h3>
-          <span className="w-9" />
-        </div>
-        <div className="space-y-3">
-          {folders.length > 1 && (
-            <select
-              value={folderId}
-              onChange={(e) => setFolderId(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground lowercase"
-            >
-              {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-            </select>
-          )}
-          <input
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder="place name"
-            autoFocus
-            className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground"
-          />
-          <input
-            value={form.url}
-            onChange={(e) => setForm({ ...form, url: e.target.value })}
-            placeholder="paste google maps link"
-            className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground"
-          />
-          <input
-            value={form.subheading}
-            onChange={(e) => setForm({ ...form, subheading: e.target.value })}
-            placeholder="subheading"
-            className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground"
-          />
-          <input
-            value={form.address}
-            onChange={(e) => setForm({ ...form, address: e.target.value })}
-            placeholder="or type a regular address"
-            className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground"
-          />
-          <textarea
-            value={form.notes}
-            onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            placeholder="notes (optional)"
-            rows={2}
-            className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground resize-none"
-          />
-        </div>
-        <button
-          onClick={() => onSubmit(folderId)}
-          disabled={resolving || !folderId}
-          className="touch-44 w-full mt-5 py-3 rounded-2xl bg-foreground text-background text-sm font-medium lowercase disabled:opacity-50"
-        >
-          {resolving ? 'locating…' : 'add place'}
-        </button>
-      </div>
     </div>
   );
 }
@@ -604,34 +525,45 @@ function MapFolderEditor({ folder, onClose, onSave, onDelete }) {
   );
 }
 
-function PlaceEditor({ folderId, place, onClose, onSave, onDelete }) {
-  const [name, setName] = useState(place.name || '');
-  const [subheading, setSubheading] = useState(place.subheading || '');
-  const [address, setAddress] = useState(place.address || '');
-  const [url, setUrl] = useState(place.url || '');
-  const [notes, setNotes] = useState(place.notes || '');
-  const [photo, setPhoto] = useState(place.photo || null);
-  const [color, setColor] = useState(place.color || '');
+function PlaceEditor({ folderId, place, folders, onClose, onSave, onDelete }) {
+  const isNew = !place?.id;
+  const [selFolder, setSelFolder] = useState(folderId || (folders[0]?.id || ''));
+  const [name, setName] = useState(place?.name || '');
+  const [subheading, setSubheading] = useState(place?.subheading || '');
+  const [address, setAddress] = useState(place?.address || '');
+  const [url, setUrl] = useState(place?.url || '');
+  const [notes, setNotes] = useState(place?.notes || '');
+  const [photo, setPhoto] = useState(place?.photo || null);
+  const [color, setColor] = useState(place?.color || '');
 
-  const save = () => onSave({ name: name.trim() || 'unnamed place', subheading: subheading.trim(), address: address.trim(), url: url.trim(), notes: notes.trim(), photo, color });
+  const save = () => onSave(
+    isNew ? selFolder : folderId,
+    isNew ? undefined : place.id,
+    { name: name.trim() || 'unnamed place', subheading: subheading.trim(), address: address.trim(), url: url.trim(), notes: notes.trim(), photo, color }
+  );
 
-  // bottom sheet that pops up over the map (map collapses above it). high
-  // z-index so the leaflet map never covers the editing panel.
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[1000] flex justify-center" onClick={onClose}>
-      <div className="relative w-full max-w-lg max-h-[70vh] overflow-y-auto no-scrollbar bg-card rounded-t-3xl border-t border-border p-5 pb-8 animate-slide-up shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="w-10 h-1 rounded-full bg-muted mx-auto mb-4" />
+    <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-background/60 backdrop-blur-sm animate-fade-in" />
+      <div className="relative w-full max-w-lg max-h-[80vh] overflow-y-auto no-scrollbar bg-card rounded-t-3xl sm:rounded-3xl border border-border p-5 pb-8 animate-slide-up shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <button onClick={onClose} className="touch-44 flex items-center gap-1 text-xs font-medium lowercase text-muted-foreground">
             <ChevronLeft className="w-4 h-4" /> back
           </button>
-          <h3 className="text-sm font-semibold lowercase">edit place</h3>
-          <button onClick={onDelete} className="touch-44 p-1 rounded-full text-destructive">
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <h3 className="text-sm font-semibold lowercase">{isNew ? 'new place' : 'edit place'}</h3>
+          {onDelete ? (
+            <button onClick={onDelete} className="touch-44 p-1 rounded-full text-destructive">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          ) : <span className="w-8" />}
         </div>
 
         <div className="space-y-3">
+          {isNew && folders.length > 0 && (
+            <select value={selFolder} onChange={(e) => setSelFolder(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground">
+              {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+          )}
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="place name" className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
           <input value={subheading} onChange={(e) => setSubheading(e.target.value)} placeholder="subheading" className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
           <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="address" className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
@@ -648,7 +580,7 @@ function PlaceEditor({ folderId, place, onClose, onSave, onDelete }) {
           <ImageUpload value={photo} onChange={setPhoto} label="photo" aspect={1} maxSize={800} className="h-28" />
         </div>
 
-        <button onClick={save} className="touch-44 w-full mt-5 py-3 rounded-2xl bg-foreground text-background text-sm font-medium lowercase">save</button>
+        <button onClick={save} className="touch-44 w-full mt-5 py-3 rounded-2xl bg-foreground text-background text-sm font-medium lowercase">{isNew ? 'add place' : 'save'}</button>
       </div>
     </div>
   );

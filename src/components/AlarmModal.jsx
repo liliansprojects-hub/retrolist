@@ -3,7 +3,7 @@ import { X, Play, Trash2, Upload, Music } from 'lucide-react';
 import { SOUNDS, VIBRATIONS, preview, stopAll } from '@/lib/alarmAudio';
 import { getSettings, getCustomTracks, addCustomTrack, deleteCustomTrack } from '@/lib/store';
 import { cn } from '@/lib/utils';
-import ColorPicker from '@/components/ColorPicker';
+import ColorPicker from './ColorPicker';
 
 const DAY_LABELS = ['s', 'm', 't', 'w', 't', 'f', 's'];
 
@@ -65,6 +65,7 @@ export default function AlarmModal({ open, onClose, onSave, onDelete, alarm }) {
   const [snooze, setSnooze] = useState(5);
   const [format, setFormat] = useState('24h');
   const [color, setColor] = useState('');
+  const [style, setStyle] = useState('tip');
   const [tracks, setTracks] = useState([]);
   const fileRef = useRef(null);
 
@@ -82,6 +83,7 @@ export default function AlarmModal({ open, onClose, onSave, onDelete, alarm }) {
       setSnooze(alarm?.snooze || s.defaultSnooze || 5);
       setFormat(s.clockFormat || '24h');
       setColor(alarm?.color || '');
+      setStyle(alarm?.style || 'tip');
       refreshTracks();
     }
     return () => { stopAll(); };
@@ -102,8 +104,9 @@ export default function AlarmModal({ open, onClose, onSave, onDelete, alarm }) {
       sound,
       vibration,
       snooze: Number(snooze) || 5,
-      color,
       enabled: alarm ? alarm.enabled : true,
+      color,
+      style,
     });
   };
 
@@ -268,6 +271,15 @@ export default function AlarmModal({ open, onClose, onSave, onDelete, alarm }) {
           </div>
 
           <ColorPicker value={color} onChange={setColor} label="alarm colour" />
+          {color && (
+            <div>
+              <label className={labelCls}>style</label>
+              <div className="flex gap-2">
+                <button onClick={() => setStyle('tip')} className={cn('touch-44 flex-1 py-2.5 rounded-xl border text-xs lowercase', style === 'tip' ? 'bg-foreground text-background border-foreground' : 'bg-background border-border')}>tip</button>
+                <button onClick={() => setStyle('full')} className={cn('touch-44 flex-1 py-2.5 rounded-xl border text-xs lowercase', style === 'full' ? 'bg-foreground text-background border-foreground' : 'bg-background border-border')}>full</button>
+              </div>
+            </div>
+          )}
         </div>
 
         <p className="text-[10px] text-muted-foreground/60 lowercase text-center mt-6">

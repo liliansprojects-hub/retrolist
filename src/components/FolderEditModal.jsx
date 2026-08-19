@@ -131,7 +131,7 @@ export default function FolderEditModal({ open, onClose, onSave, folder, default
             </div>
           </div>
 
-          <ImageUpload value={cover} onChange={setCover} label="cover photo" aspect={coverAspect} maxSize={2000} quality={0.9} className="h-40" />
+          <ImageUpload value={cover} onChange={setCover} label="cover photo" aspect={coverAspect} maxSize={2000} quality={0.9} className="" />
 
           <div>
             <label className="text-xs font-medium text-muted-foreground lowercase block mb-1.5">emoji (optional)</label>

@@ -44,19 +44,40 @@ export default function Alarms() {
     refresh();
   };
   const toggle = (a) => { updateAlarm(a.id, { enabled: !a.enabled }); refresh(); };
+  const allOn = alarms.length > 0 && alarms.every((a) => a.enabled);
+  const toggleAll = () => {
+    // "turns off/on all available working alarms" — flips every alarm to the
+    // opposite of its current overall state, never deletes anything.
+    const next = !allOn;
+    alarms.forEach((a) => updateAlarm(a.id, { enabled: next }));
+    refresh();
+  };
 
   const now = new Date();
 
   return (
     <div className="safe-top px-6 sm:px-8 pb-4 min-h-screen">
-      <header className="mb-5 flex items-end justify-between">
+      <header className="mb-5 flex items-end justify-between gap-2">
         <div>
           <h1 className="text-3xl font-extrabold lowercase tracking-tight">alarms</h1>
           <p className="text-sm text-muted-foreground lowercase mt-0.5">wake up, your way</p>
         </div>
-        <button onClick={openNew} className="touch-44 w-10 h-10 rounded-full bg-foreground text-background flex items-center justify-center">
-          <Plus className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          {alarms.length > 0 && (
+            <button
+              onClick={toggleAll}
+              className={cn('touch-44 flex items-center gap-2 pl-3 pr-2 h-9 rounded-full text-[11px] font-medium lowercase', allOn ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground')}
+            >
+              {allOn ? 'all on' : 'all off'}
+              <span className={cn('relative w-8 h-[18px] rounded-full transition-colors shrink-0', allOn ? 'bg-background/25' : 'bg-foreground/15')}>
+                <span className="absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all bg-background" style={{ left: allOn ? '15px' : '2px', backgroundColor: allOn ? undefined : 'hsl(var(--foreground))' }} />
+              </span>
+            </button>
+          )}
+          <button onClick={openNew} className="touch-44 w-10 h-10 rounded-full bg-foreground text-background flex items-center justify-center shrink-0">
+            <Plus className="w-5 h-5" />
+          </button>
+        </div>
       </header>
 
       {alarms.length === 0 ? (
@@ -70,11 +91,8 @@ export default function Alarms() {
             const next = a.enabled ? nextTrigger(a, now) : null;
             const diff = next ? next.getTime() - now.getTime() : null;
             return (
-              <div
-                key={a.id}
-                className={cn('rounded-2xl border border-border p-4', !a.enabled && 'opacity-50')}
-                style={a.color ? { borderLeft: `6px solid ${a.color}` } : undefined}
-              >
+              <div key={a.id} className={cn('relative rounded-2xl border border-border p-4 overflow-hidden', (a.color && a.style !== 'full') && 'pl-7', !a.enabled && 'opacity-50')} style={a.color && a.style === 'full' ? { backgroundColor: a.color + '1A' } : undefined}>
+                {a.color && a.style !== 'full' && <span className="absolute top-0 bottom-0 left-0 w-2.5 rounded-r-md" style={{ backgroundColor: a.color }} />}
                 <div className="flex items-center justify-between gap-3">
                   <button onClick={() => openEdit(a)} className="flex-1 text-left">
                     <div className="flex items-baseline gap-2">

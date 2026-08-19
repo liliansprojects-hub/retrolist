@@ -38,7 +38,7 @@ export default function ItemRow({ item, folderType, onUpdate, onOpen }) {
   const contentColor = isFull ? readableText(item.color) : undefined;
 
   const textClass = cn(
-    'flex-1 text-sm bg-transparent outline-none selectable min-w-0',
+    'w-full text-sm bg-transparent outline-none selectable min-w-0',
     isTodo && item.done && 'line-through text-muted-foreground',
     isChecklist && item.done && 'text-muted-foreground'
   );
@@ -61,62 +61,67 @@ export default function ItemRow({ item, folderType, onUpdate, onOpen }) {
 
   return (
     <div
-      className={cn('relative rounded-2xl overflow-hidden transition-all', padY, minH, !hasColor && 'border border-border', (tipLeft || tipRight) && 'shadow-sm shadow-foreground/10')}
+      className={cn(
+        'relative rounded-2xl overflow-hidden transition-all flex items-center',
+        padY, minH,
+        !hasColor && 'border border-border',
+        (tipLeft || tipRight) && 'shadow-[0_1px_3px_rgba(0,0,0,0.10)]'
+      )}
       style={bg}
     >
       {tipLeft && (
         <span
-          className="absolute left-0 top-0 bottom-0 rounded-r-full"
-          style={{ width: 'max(16.6%, 22px)', backgroundColor: item.color, opacity: 0.55 }}
+          className="absolute top-0 bottom-0 left-0"
+          style={{ width: 'max(12.5%, 14px)', backgroundColor: item.color, borderRadius: '0 9999px 9999px 0' }}
         />
       )}
       {tipRight && (
         <span
-          className="absolute right-0 top-0 bottom-0 rounded-l-full"
-          style={{ width: 'max(16.6%, 22px)', backgroundColor: item.color, opacity: 0.55 }}
+          className="absolute top-0 bottom-0 right-0"
+          style={{ width: 'max(12.5%, 14px)', backgroundColor: item.color, borderRadius: '9999px 0 0 9999px' }}
         />
       )}
       <div
-        className={cn('relative flex flex-col justify-center h-full', tipLeft ? 'pl-8 pr-3.5' : tipRight ? 'pl-3.5 pr-8' : 'pl-4 pr-3.5')}
+        className={cn('relative flex items-center gap-2 w-full', tipLeft ? 'pl-10 pr-3' : tipRight ? 'pl-4 pr-10' : 'pl-4 pr-3')}
         style={contentColor ? { color: contentColor } : undefined}
       >
-        <div className="flex items-center gap-2">
-          {isTodo && (
-            <button onClick={toggle} className={cn('touch-44 w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 icon-no-select', item.done ? 'bg-foreground border-foreground' : 'border-border')}>
-              {item.done && <Check className="w-3.5 h-3.5 text-background" strokeWidth={3} />}
-            </button>
-          )}
-          {isChecklist && (
-            <button onClick={toggle} className={cn('touch-44 w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 icon-no-select', item.done ? 'bg-foreground border-foreground' : 'border-border')}>
-              {item.done && <Check className="w-3.5 h-3.5 text-background" strokeWidth={3} />}
-            </button>
-          )}
-          <input value={item.text || ''} onChange={(e) => onUpdate(item.id, { text: e.target.value })} placeholder="type something..." className={textClass} />
-          {folderType === 'reminder' && (
-            <button
-              onClick={() => {
-                const time = prompt('set reminder time (e.g. 14:30)');
-                if (time) { onUpdate(item.id, { remindAt: time }); if ('Notification' in window) Notification.requestPermission(); }
-              }}
-              className="touch-44 p-1 rounded-full text-muted-foreground shrink-0"
-            >
-              <Bell className={cn('w-4 h-4', item.remindAt && 'text-foreground fill-foreground')} />
-            </button>
-          )}
-          <button onClick={() => onOpen?.(item)} className="touch-44 p-1 rounded-full text-muted-foreground shrink-0">
-            <ChevronRight className="w-4 h-4" />
+        {isTodo && (
+          <button onClick={toggle} className={cn('touch-44 w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 icon-no-select', item.done ? 'bg-foreground border-foreground' : 'border-border')}>
+            {item.done && <Check className="w-3.5 h-3.5 text-background" strokeWidth={3} />}
           </button>
-        </div>
-        {(meta.length > 0 || mediaCount > 0) && (
-          <div className={cn('flex flex-wrap items-center gap-x-2 gap-y-0.5 -mt-0.5 leading-none text-[11px] lowercase', isTodo || isChecklist ? 'pl-8' : 'pl-1', isFull ? '' : 'text-muted-foreground')}>
-            {meta.map((m, i) => (
-              <span key={i} className="whitespace-nowrap">{m}{i < meta.length - 1 ? ' ·' : ''}</span>
-            ))}
-            {mediaCount > 0 && (
-              <span className="flex items-center gap-0.5"><Paperclip className="w-3 h-3" /> {mediaCount}</span>
-            )}
-          </div>
         )}
+        {isChecklist && (
+          <button onClick={toggle} className={cn('touch-44 w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 icon-no-select', item.done ? 'bg-foreground border-foreground' : 'border-border')}>
+            {item.done && <Check className="w-3.5 h-3.5 text-background" strokeWidth={3} />}
+          </button>
+        )}
+        <div className="flex-1 min-w-0 flex flex-col justify-center leading-tight">
+          <input value={item.text || ''} onChange={(e) => onUpdate(item.id, { text: e.target.value })} placeholder="type something..." className={textClass} />
+          {(meta.length > 0 || mediaCount > 0) && (
+            <div className={cn('flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0 text-[11px] lowercase', isFull ? '' : 'text-muted-foreground')}>
+              {meta.map((m, i) => (
+                <span key={i} className="whitespace-nowrap">{m}{i < meta.length - 1 ? ' ·' : ''}</span>
+              ))}
+              {mediaCount > 0 && (
+                <span className="flex items-center gap-0.5"><Paperclip className="w-3 h-3" /> {mediaCount}</span>
+              )}
+            </div>
+          )}
+        </div>
+        {folderType === 'reminder' && (
+          <button
+            onClick={() => {
+              const time = prompt('set reminder time (e.g. 14:30)');
+              if (time) { onUpdate(item.id, { remindAt: time }); if ('Notification' in window) Notification.requestPermission(); }
+            }}
+            className="touch-44 p-1 rounded-full text-muted-foreground shrink-0"
+          >
+            <Bell className={cn('w-4 h-4', item.remindAt && 'text-foreground fill-foreground')} />
+          </button>
+        )}
+        <button onClick={() => onOpen?.(item)} className="touch-44 p-1 rounded-full text-muted-foreground shrink-0">
+          <ChevronRight className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );

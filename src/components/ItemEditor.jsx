@@ -19,6 +19,34 @@ const KIND_LABELS = {
   interest: 'interest', sport: 'sport', arts: 'arts', language: 'language', skills: 'skills', place: 'place',
 };
 
+const KIND_META = {
+  todo: { name: 'to-do', sub: 'subheading' },
+  checklist: { name: 'checklist item', sub: 'subheading' },
+  list: { name: 'item', sub: 'subheading' },
+  note: { name: 'note', sub: 'subheading' },
+  movie: { name: 'movie title', sub: 'director' },
+  series: { name: 'series title', sub: 'subheading' },
+  drama: { name: 'drama title', sub: 'subheading' },
+  book: { name: 'book title', sub: 'author' },
+  audiobook: { name: 'audiobook title', sub: 'author' },
+  magazine: { name: 'magazine', sub: 'issue' },
+  article: { name: 'article title', sub: 'source' },
+  aspiration: { name: 'goal', sub: 'subheading' },
+  role: { name: 'role', sub: 'subheading' },
+  programme: { name: 'programme', sub: 'subheading' },
+  course: { name: 'course', sub: 'subheading' },
+  exercise: { name: 'exercise', sub: 'target' },
+  saving: { name: 'saving goal', sub: 'subheading' },
+  habit: { name: 'habit', sub: 'subheading' },
+  hobby: { name: 'hobby', sub: 'subheading' },
+  interest: { name: 'interest', sub: 'subheading' },
+  sport: { name: 'sport', sub: 'subheading' },
+  arts: { name: 'art form', sub: 'subheading' },
+  language: { name: 'language', sub: 'subheading' },
+  skills: { name: 'skill', sub: 'subheading' },
+  place: { name: 'place name', sub: 'subheading' },
+};
+
 // separate-window item editor: name + subheading + type-specific fields (year,
 // date/month, reps/times, amount), notes, colour, photos/files, link, and
 // move/copy/share. items are leaf nodes — nothing can be added inside them,
@@ -89,10 +117,10 @@ export default function ItemEditor({ item, folderType, onClose, onSave, onDelete
             </div>
           )}
 
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="name" autoFocus className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm font-semibold outline-none focus:border-foreground" />
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder={KIND_META[kind]?.name || 'name'} autoFocus className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm font-semibold outline-none focus:border-foreground" />
 
           {showSubheading && (
-            <input value={subheading} onChange={(e) => setSubheading(e.target.value)} placeholder="subheading" className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
+            <input value={subheading} onChange={(e) => setSubheading(e.target.value)} placeholder={KIND_META[kind]?.sub || 'subheading'} className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
           )}
           {showYear && (
             <input value={year} onChange={(e) => setYear(e.target.value)} placeholder="year" inputMode="numeric" className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />

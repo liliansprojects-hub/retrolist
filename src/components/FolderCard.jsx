@@ -17,6 +17,65 @@ function readableText(hex) {
   return lum > 0.6 ? '#1a1a1a' : '#fff';
 }
 
+// items created straight from the main page's + wheel/panel are stored in an
+// auto-made single-item wrapper list (items can't exist without a parent —
+// see the three-tier folders/lists/items structure), but on the main page
+// itself they must render as the actual item — same colour/tip styling as
+// ItemRow — not as a folder cover with a count. this mirrors ItemRow's
+// full/tip-left/tip-right logic so the two stay visually identical.
+function SoloItemCover({ item, onClick, onMenu }) {
+  const hasColor = !!item.color;
+  const isFull = hasColor && item.style === 'full';
+  const tipLeft = hasColor && item.style === 'tip-left';
+  const tipRight = hasColor && item.style === 'tip-right';
+  const contentColor = isFull ? readableText(item.color) : '#1a1a1a';
+  const bg = isFull ? { backgroundColor: item.color + 'D9' } : { backgroundColor: '#f4f4f5' };
+
+  const meta = [];
+  if (item.subheading) meta.push(item.subheading);
+  if (item.year) meta.push(item.year);
+  if (item.date) meta.push(item.date);
+  if (item.reps) meta.push(item.reps + ' reps');
+  if (item.times) meta.push(item.times + ' sets');
+  if (item.amount) meta.push('£' + item.amount);
+
+  return (
+    <button
+      onClick={onClick}
+      className="card-no-select group relative w-full h-full rounded-2xl overflow-hidden active:scale-95 transition-transform text-left"
+      style={bg}
+    >
+      {tipLeft && (
+        <span className="absolute top-0 bottom-0 left-0" style={{ width: 'max(12.5%, 14px)', backgroundColor: item.color, borderRadius: '0 9999px 9999px 0' }} />
+      )}
+      {tipRight && (
+        <span className="absolute top-0 bottom-0 right-0" style={{ width: 'max(12.5%, 14px)', backgroundColor: item.color, borderRadius: '9999px 0 0 9999px' }} />
+      )}
+      {onMenu && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onMenu(); }}
+          className="touch-44 absolute top-1.5 right-1.5 w-6 h-6 flex items-center justify-center z-10"
+        >
+          <MoreVertical className="w-3.5 h-3.5" style={{ color: contentColor }} />
+        </button>
+      )}
+      <div
+        className={cn('absolute inset-0 flex flex-col justify-center', tipLeft ? 'pl-6 pr-4' : tipRight ? 'pl-4 pr-6' : 'px-4')}
+        style={{ color: contentColor }}
+      >
+        <h3 className="text-base font-extrabold lowercase leading-tight line-clamp-2">
+          {item.text || 'untitled'}
+        </h3>
+        {meta.length > 0 && (
+          <p className="text-[11px] lowercase opacity-80 mt-0.5 line-clamp-1">
+            {meta.join(' · ')}
+          </p>
+        )}
+      </div>
+    </button>
+  );
+}
+
 export default function FolderCard({ folder, onClick, onMenu, fill }) {
   const itemCount = folder.items?.length || 0;
   const coverPhoto = folder.cover;
@@ -26,6 +85,15 @@ export default function FolderCard({ folder, onClick, onMenu, fill }) {
   const ratio = (BLOCK_SIZES.find((s) => s.id === (folder.size || 'portrait')) || BLOCK_SIZES[1]).ratio;
   const typeLabel = LIST_TYPES[folder.type]?.label || folder.type;
   const textColor = readableText(bgColor);
+
+  // an item-only wrapper — show the item itself, not a folder cover.
+  if (folder.soloItem && itemCount === 1) {
+    return (
+      <div className={fill ? 'w-full h-full' : 'w-full mb-3 break-inside-avoid'} style={fill ? undefined : { aspectRatio: ratio }}>
+        <SoloItemCover item={folder.items[0]} onClick={onClick} onMenu={onMenu} />
+      </div>
+    );
+  }
 
   return (
     <button
@@ -75,9 +143,9 @@ export default function FolderCard({ folder, onClick, onMenu, fill }) {
         </button>
       )}
 
-      {/* info — vertically centred in the cover, not bottom-anchored */}
+      {/* info */}
       {!isReminder && (
-        <div className="absolute inset-0 flex flex-col justify-center items-start p-4" style={{ color: coverPhoto ? '#fff' : textColor }}>
+        <div className="absolute bottom-0 inset-x-0 p-4 pb-5" style={{ color: coverPhoto ? '#fff' : textColor }}>
           <h3 className="text-base font-extrabold lowercase leading-tight line-clamp-2">
             {folder.name}
           </h3>

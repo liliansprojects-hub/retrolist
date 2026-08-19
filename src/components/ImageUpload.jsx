@@ -60,7 +60,7 @@ export default function ImageUpload({
     <div>
       {label && <span className="text-xs font-medium text-muted-foreground lowercase block mb-2">{label}</span>}
       {value ? (
-        <div className={cn('relative', className)}>
+        <div className={cn('relative w-full', className)} style={{ aspectRatio: aspect || undefined }}>
           <img src={value} alt="" className={cn('w-full h-full object-cover', round ? 'rounded-full' : 'rounded-2xl')} />
           {!controlsOutside && (
             <div className="absolute -top-2 right-0 flex gap-1 z-10">
