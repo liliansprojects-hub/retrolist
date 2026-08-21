@@ -80,7 +80,7 @@ export default function Home() {
   const ITEM_PARENT = { todo: 'todo', checklist: 'todo', list: 'list', note: 'list', movie: 'movie', series: 'movie', drama: 'movie', book: 'book', audiobook: 'book', magazine: 'book', article: 'book', aspiration: 'aspiration', role: 'aspiration', programme: 'aspiration', course: 'aspiration', exercise: 'habit', saving: 'habit', habit: 'habit', hobby: 'hobby', interest: 'hobby', sport: 'hobby', arts: 'hobby', language: 'hobby', skills: 'hobby', place: 'place' };
   const ITEM_KINDS = new Set(ALL_ITEM_KINDS.map((it) => it.kind));
 
-  const handleSelect = (value) => {
+  const handleSelect = (value, groupIndex) => {
     if (value === 'event') {
       setEventOpen(true);
       return;
@@ -98,7 +98,19 @@ export default function Home() {
       setReminderFolder(null);
       return;
     }
-    if (ITEM_KINDS.has(value)) {
+    // groupIndex is the authoritative signal — several names exist as BOTH a
+    // folder type and an item kind (book, movie, aspiration, habit, hobby,
+    // place, list, todo, note), so checking "is this value an item kind" on
+    // its own was wrong: clicking "movies" in the lists&folders group has the
+    // exact same value string as clicking "movie" in the items group. This
+    // was the actual cause of every list/folder acting like a lone item —
+    // groupIndex 0 (lists&folders) always means create a real list/folder,
+    // groupIndex 1 (items) always means create a lone item, regardless of
+    // any name overlap. groupIndex is only undefined for the (non-radial)
+    // grouped panel's very first render frame before a click — value-based
+    // ITEM_KINDS check stays as a fallback for that edge case only.
+    const isItemGroup = groupIndex === 1 || (groupIndex === undefined && ITEM_KINDS.has(value) && !LIST_OPTIONS.some((o) => o.value === value));
+    if (isItemGroup) {
       createItemFlow(value);
       return;
     }

@@ -134,7 +134,10 @@ export async function registerLocal(username, password, email) {
   const salt = randomHex(16);
   const hash = await pbkdf2(password, salt);
   const e = (email || '').trim().toLowerCase();
-  const account = { username: u, salt: salt, hash: hash, email: e, email_confirmed: !!e, updated_date: Date.now() };
+  // email_confirmed always starts false when an email is given — it isn't
+  // actually verified yet at this point, just supplied. it only becomes true
+  // once verifyEmailRemote succeeds (see Register.jsx / EmailSection.jsx).
+  const account = { username: u, salt: salt, hash: hash, email: e, email_confirmed: false, updated_date: Date.now() };
   saveAccount(account);
   setLoggedIn(u);
   return account;

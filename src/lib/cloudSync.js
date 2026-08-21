@@ -10,6 +10,7 @@ import {
   getAlarms, saveAlarms, getDeletedLog, saveDeletedLog,
 } from './store';
 import { getAccount, saveAccount } from './localAuth';
+import { db } from './base44Client';
 
 let syncing = false;
 

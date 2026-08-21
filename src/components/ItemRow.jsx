@@ -54,8 +54,8 @@ export default function ItemRow({ item, folderType, onUpdate, onOpen }) {
   if (kind === 'saving' && item.amount) meta.push('£' + item.amount);
 
   const short = item.itemHeight === 'short';
-  const padY = short ? 'py-1.5' : 'py-3';
-  const minH = short ? 'min-h-[36px]' : 'min-h-[58px]';
+  const padY = short ? 'py-1' : 'py-3';
+  const minH = short ? 'min-h-[29px]' : 'min-h-[58px]'; // 29 = exactly half of 58, per request
 
   const bg = isFull ? { backgroundColor: item.color + 'D9' } : undefined;
 
@@ -72,17 +72,17 @@ export default function ItemRow({ item, folderType, onUpdate, onOpen }) {
       {tipLeft && (
         <span
           className="absolute top-0 bottom-0 left-0"
-          style={{ width: 'max(12.5%, 14px)', backgroundColor: item.color, borderRadius: '0 9999px 9999px 0' }}
+          style={{ width: 'max(16%, 20px)', backgroundColor: item.color }}
         />
       )}
       {tipRight && (
         <span
           className="absolute top-0 bottom-0 right-0"
-          style={{ width: 'max(12.5%, 14px)', backgroundColor: item.color, borderRadius: '9999px 0 0 9999px' }}
+          style={{ width: 'max(16%, 20px)', backgroundColor: item.color }}
         />
       )}
       <div
-        className={cn('relative flex items-center gap-2 w-full', tipLeft ? 'pl-10 pr-3' : tipRight ? 'pl-4 pr-10' : 'pl-4 pr-3')}
+        className={cn('relative flex items-center gap-2 w-full', tipLeft ? 'pl-12 pr-3' : tipRight ? 'pl-4 pr-12' : 'pl-4 pr-3')}
         style={contentColor ? { color: contentColor } : undefined}
       >
         {isTodo && (

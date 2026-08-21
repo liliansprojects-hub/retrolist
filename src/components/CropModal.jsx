@@ -34,12 +34,15 @@ export default function CropModal({ imageSrc, aspect = 1, round = false, maxSize
       const avail = el ? el.getBoundingClientRect().width : Math.min(window.innerWidth - 48, 340);
       const maxW = Math.min(avail, 340);
       const maxH = Math.min(window.innerHeight * 0.45, 340);
-      // frame matches the photo's own aspect so the whole picture fits exactly —
-      // no empty space around it, nothing cropped away at scale 1.
-      const imgAspect = natural.w && natural.h ? natural.w / natural.h : aspect;
+      // frame is locked to the CHOSEN orientation's aspect ratio (aspect
+      // prop) — not the photo's own shape. the photo gets fit/cropped into
+      // this fixed-shape grid, never the other way around, so the block's
+      // orientation is always respected regardless of what photo goes in it.
+      // (this also applies to profile pictures, which pass aspect={1} for a
+      // square frame — same component, same fix.)
       let w = maxW;
-      let h = w / imgAspect;
-      if (h > maxH) { h = maxH; w = h * imgAspect; }
+      let h = w / aspect;
+      if (h > maxH) { h = maxH; w = h * aspect; }
       setFrame({ w, h });
     };
     fit();
@@ -51,9 +54,16 @@ export default function CropModal({ imageSrc, aspect = 1, round = false, maxSize
     }
     window.addEventListener('resize', fit);
     return () => window.removeEventListener('resize', fit);
-  }, [aspect, natural]);
+  }, [aspect]);
 
-  const fitScale = natural.w && natural.h && frame.w ? Math.min(frame.w / natural.w, frame.h / natural.h) : 1;
+  // COVER behavior (fill the whole grid, crop the excess) — not contain —
+  // so the photo fills the chosen-orientation frame completely at scale 1,
+  // with anything that doesn't fit the shape cut off rather than letterboxed.
+  // This was the actual "squeezing" bug: with frame previously forced to
+  // match the photo's own aspect, contain vs cover never mattered (they were
+  // numerically identical), which is exactly why this bug was invisible
+  // until the frame was correctly locked to the orientation instead.
+  const fitScale = natural.w && natural.h && frame.w ? Math.max(frame.w / natural.w, frame.h / natural.h) : 1;
 
   const clamp = useCallback((x, y, imgW, imgH) => {
     // photo-bounded: never let the frame show empty space outside the picture.

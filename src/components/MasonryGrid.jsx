@@ -224,8 +224,20 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
       {placedM.map((p, i) => {
         const f = packItems[i];
         const full = foldersById[f.id] || f;
+        const isDraggingThis = dragRef.current && dragRef.current.id === f.id;
+        const isResizingThis = isDraggingThis && dragRef.current.mode === 'resize';
+        const isMovingThis = isDraggingThis && dragRef.current.mode === 'move';
+        // resize uses the live drag width/height directly instead of the
+        // packer's in-progress recomputed position — the packer re-runs on
+        // every pixel of a resize (since it needs the new size to know where
+        // everything else goes), and if that momentarily produced a
+        // collapsed 0-ish box for this item, the card (which fills its
+        // wrapper) would vanish while the independently-positioned arrow
+        // handles stayed put — exactly "leaves only the arrows".
+        const boxW = isResizingThis ? dragRef.current.w : p.w;
+        const boxH = isResizingThis ? dragRef.current.h : p.h;
         return (
-          <div key={f.id} className="absolute" style={{ left: p.x, top: p.y, width: p.w, height: p.h, zIndex: dragRef.current && dragRef.current.id === f.id && dragRef.current.mode === 'move' ? 30 : undefined, transform: dragRef.current && dragRef.current.id === f.id && dragRef.current.mode === 'move' ? `translate(${dragRef.current.lastX - p.x}px, ${dragRef.current.lastY - p.y}px)` : undefined, transition: dragRef.current && dragRef.current.id === f.id ? 'none' : 'left 0.18s ease, top 0.18s ease, width 0.18s ease, height 0.18s ease' }}>
+          <div key={f.id} className="absolute" style={{ left: p.x, top: p.y, width: boxW, height: boxH, zIndex: isMovingThis || isResizingThis ? 30 : undefined, transform: isMovingThis ? `translate(${dragRef.current.lastX - p.x}px, ${dragRef.current.lastY - p.y}px)` : undefined, transition: isDraggingThis ? 'none' : 'left 0.18s ease, top 0.18s ease, width 0.18s ease, height 0.18s ease' }}>
             <div onPointerDown={editMode ? (e) => onBodyDown(e, f) : undefined} className={editMode ? 'w-full h-full cursor-move' : 'w-full h-full'} style={{ touchAction: editMode ? 'none' : undefined }}>
               <FolderCard fill folder={full} onClick={editMode ? undefined : () => onOpen(f.id)} onMenu={editMode ? undefined : () => onMenu(full)} />
             </div>
