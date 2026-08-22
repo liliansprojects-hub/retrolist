@@ -1,5 +1,4 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { db } from './base44Client';
 
 const AuthContext = createContext();
 

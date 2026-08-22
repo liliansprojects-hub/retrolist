@@ -31,12 +31,7 @@ export default function ForgotPassword() {
     setLoading(true);
     try {
       const res = await forgotPasswordRemote(u, email.trim());
-      if (res && res.error) {
-        const friendly = res.error === 'email does not match this username' ? 'Email incorrect.' : res.error;
-        setError(friendly);
-        setLoading(false);
-        return;
-      }
+      if (res && res.error) { setError(res.error); setLoading(false); return; }
       setStep(2);
     } catch (err) { setError((err && err.message) || 'failed to send code'); }
     setLoading(false);

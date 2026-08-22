@@ -1,7 +1,6 @@
 import { useLocation } from 'react-router-dom';
 
 import { useQuery } from '@tanstack/react-query';
-import { db } from './base44Client';
 
 export default function PageNotFound({}) {
     const location = useLocation();

@@ -46,10 +46,10 @@ function SoloItemCover({ item, onClick, onMenu }) {
       style={bg}
     >
       {tipLeft && (
-        <span className="absolute top-0 bottom-0 left-0" style={{ width: 'max(16%, 20px)', backgroundColor: item.color }} />
+        <span className="absolute top-0 bottom-0 left-0" style={{ width: 'max(12.5%, 14px)', backgroundColor: item.color, borderRadius: '0 9999px 9999px 0' }} />
       )}
       {tipRight && (
-        <span className="absolute top-0 bottom-0 right-0" style={{ width: 'max(16%, 20px)', backgroundColor: item.color }} />
+        <span className="absolute top-0 bottom-0 right-0" style={{ width: 'max(12.5%, 14px)', backgroundColor: item.color, borderRadius: '9999px 0 0 9999px' }} />
       )}
       {onMenu && (
         <button
@@ -60,7 +60,7 @@ function SoloItemCover({ item, onClick, onMenu }) {
         </button>
       )}
       <div
-        className={cn('absolute inset-0 flex flex-col justify-center', tipLeft ? 'pl-8 pr-4' : tipRight ? 'pl-4 pr-8' : 'px-4')}
+        className={cn('absolute inset-0 flex flex-col justify-center', tipLeft ? 'pl-6 pr-4' : tipRight ? 'pl-4 pr-6' : 'px-4')}
         style={{ color: contentColor }}
       >
         <h3 className="text-base font-extrabold lowercase leading-tight line-clamp-2">

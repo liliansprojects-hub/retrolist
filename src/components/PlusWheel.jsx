@@ -25,17 +25,17 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
   const handlePressEnd = () => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } };
   const handleClick = () => { if (open) { close(); return; } setWheelMode(false); setOpen(true); };
   const close = () => { setOpen(false); setWheelMode(false); };
-  const handleSelect = (value, groupIndex) => { onSelect(value, groupIndex); close(); };
+  const handleSelect = (value) => { onSelect(value); close(); };
 
   const posClass = position === 'bottom-right' ? 'bottom-24 right-6' : 'bottom-24 left-1/2 -translate-x-1/2';
 
   const renderGroups = () =>
-    groups.map((g, groupIndex) => (
+    groups.map((g) => (
       <div key={g.title} className="mb-4">
         <h3 className="text-[11px] font-medium text-muted-foreground lowercase mb-2">{g.title}</h3>
         <div className="grid grid-cols-3 gap-3">
           {g.items.map((item) => (
-            <button key={item.value} onClick={(e) => { e.stopPropagation(); handleSelect(item.value, groupIndex); }} className="touch-44 flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl bg-background border border-border active:scale-95 transition-transform icon-no-select">
+            <button key={item.value} onClick={(e) => { e.stopPropagation(); handleSelect(item.value); }} className="touch-44 flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl bg-background border border-border active:scale-95 transition-transform icon-no-select">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: (item.color || '#f4f4f5') + '30' }}>
                 <item.icon className="w-5 h-5 text-foreground" strokeWidth={2} />
               </div>
@@ -47,26 +47,12 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
     ));
 
   const useRadial = vp.w >= 600 && vp.h >= 520;
+  // shrunk considerably from before, with generous margins left around the
+  // whole wheel — it no longer eats most of the screen.
+  const outerR = Math.min(vp.w * 0.28, vp.h * 0.24, 175);
+  const innerR = outerR * 0.52;
   const listOpts = groups[0]?.items || [];
   const itemOpts = groups[1]?.items || [];
-  const BTN = 48; // slightly bigger than before
-  const GAP = 16; // real empty space enforced between adjacent buttons, not just eyeballed
-  const SIDE_MARGIN = 32;
-
-  // radius is computed from the actual item count so gaps are guaranteed,
-  // not guessed: for N buttons evenly spaced on a ring of radius R, the
-  // straight-line distance between adjacent centers is 2R·sin(π/N) — solving
-  // for the radius that gives at least BTN+GAP between them.
-  const minRadiusFor = (count) => count > 1 ? (BTN + GAP) / (2 * Math.sin(Math.PI / count)) : BTN;
-  const innerMinR = minRadiusFor(listOpts.length);
-  const outerMinR = minRadiusFor(itemOpts.length);
-  let innerR = Math.max(innerMinR, BTN + GAP);
-  let outerR = Math.max(outerMinR, innerR + BTN + GAP * 1.4);
-
-  const maxOuterR = Math.min(vp.w, vp.h) / 2 - SIDE_MARGIN - BTN / 2;
-  if (outerR > maxOuterR && maxOuterR > innerR + BTN) {
-    outerR = maxOuterR;
-  }
 
   // a short curved label sitting just outside/inside each ring near the top,
   // reading along the ring's own curvature — purely decorative, doesn't
@@ -95,15 +81,15 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
     );
   };
 
-  const ring = (opts, R, groupIndex) =>
+  const ring = (opts, R) =>
     opts.map((item, i) => {
       const a = (i / opts.length) * 2 * Math.PI - Math.PI / 2;
       const x = Math.cos(a) * R;
       const y = Math.sin(a) * R;
       return (
-        <button key={item.value} onClick={(e) => { e.stopPropagation(); handleSelect(item.value, groupIndex); }} className="touch-44 absolute flex flex-col items-center justify-center gap-0.5 rounded-2xl bg-card border border-border shadow-sm active:scale-90 transition-transform icon-no-select z-[1]" style={{ width: BTN, height: BTN, left: x - BTN / 2, top: y - BTN / 2 }}>
-          <item.icon className="w-[18px] h-[18px] text-foreground" strokeWidth={2} />
-          <span className="text-[7.5px] lowercase text-muted-foreground leading-none">{item.label}</span>
+        <button key={item.value} onClick={(e) => { e.stopPropagation(); handleSelect(item.value); }} className="touch-44 absolute flex flex-col items-center justify-center gap-0.5 w-11 h-11 rounded-2xl bg-card border border-border shadow-sm active:scale-90 transition-transform icon-no-select z-[1]" style={{ left: x - 22, top: y - 22 }}>
+          <item.icon className="w-4 h-4 text-foreground" strokeWidth={2} />
+          <span className="text-[7px] lowercase text-muted-foreground leading-none">{item.label}</span>
         </button>
       );
     });
@@ -137,8 +123,8 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
                 </button>
                 {arcLabel('lists', Math.max(innerR - 26, 40), 'wheel-label-inner')}
                 {arcLabel('items', outerR + 24, 'wheel-label-outer')}
-                {ring(listOpts, innerR, 0)}
-                {ring(itemOpts, outerR, 1)}
+                {ring(listOpts, innerR)}
+                {ring(itemOpts, outerR)}
               </div>
             </div>
           ) : (

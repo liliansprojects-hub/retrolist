@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { UserPlus, User, Lock, Mail, Loader2 } from 'lucide-react';
 import AuthLayout from '@/components/AuthLayout';
 import { registerLocal, getAccountByUsername, isLoggedIn } from '@/lib/localAuth';
-import { accountLookupRemote, syncNow, confirmEmailRemote } from '@/lib/cloudSync';
+import { accountLookupRemote } from '@/lib/cloudSync';
 import { useLocalAuth } from '@/lib/LocalAuthContext';
 
 export default function Register() {
@@ -41,17 +41,6 @@ export default function Register() {
         if (lookup && lookup.exists) { setError('username taken'); return; }
       }
       await registerLocal(u, password, email);
-      if (email.trim() && navigator.onLine) {
-        // push the new account to the cloud first (confirmEmail looks the
-        // account up server-side, so it must exist there before this call),
-        // then actually trigger the confirmation code email — previously
-        // nothing sent the code at all, so email_confirmed was never real.
-        await syncNow();
-        const confirmRes = await confirmEmailRemote(u, email.trim());
-        if (confirmRes && confirmRes.error) {
-          console.warn('confirmation email failed to send:', confirmRes.error);
-        }
-      }
       refresh();
       navigate('/', { replace: true });
     } catch (err) {

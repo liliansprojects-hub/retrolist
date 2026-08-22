@@ -33,7 +33,7 @@ export default function Login() {
       const local = getAccountByUsername(u);
       if (local) {
         const hash = await pbkdf2(password, local.salt);
-        if (hash !== local.hash) { setError('Password incorrect.'); return; }
+        if (hash !== local.hash) { setError('Incorrect username or password.'); return; }
         setLoggedIn(u);
         refresh();
         navigate('/', { replace: true });
@@ -53,7 +53,7 @@ export default function Login() {
       const hash = await pbkdf2(password, lookup.salt);
       const res = await syncExchange(u, hash, []);
       if (res && res.error) {
-        setError(res.error === 'unauthorized' ? 'Password incorrect.' : res.error);
+        setError(res.error === 'unauthorized' ? 'Incorrect username or password.' : res.error);
         return;
       }
       if (res && Array.isArray(res.records)) applySyncedRecords(res.records);
@@ -64,7 +64,7 @@ export default function Login() {
     } catch (err) {
       const msg = (err && err.message) || '';
       if (/not found|404|no such|does not exist/i.test(msg)) setError('Account not found.');
-      else if (/unauthorized|wrong password|invalid/i.test(msg)) setError('Password incorrect.');
+      else if (/unauthorized|wrong password|invalid/i.test(msg)) setError('Incorrect username or password.');
       else setError('sign in failed — check your connection and try again');
     } finally {
       setLoading(false);

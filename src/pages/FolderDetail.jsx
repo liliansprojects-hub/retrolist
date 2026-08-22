@@ -79,10 +79,6 @@ export default function FolderDetail() {
 
   const handleAddItem = (kind) => {
     const it = addItem(id, { text: '', kind });
-    refresh(); // was missing — every other mutating handler in this file
-    // calls refresh(), but this one didn't, so a newly created item never
-    // appeared in the list until something unrelated happened to trigger a
-    // re-render later (e.g. saving the item editor).
     setEditingItem({ ...it, __isNew: true });
   };
 

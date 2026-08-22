@@ -100,13 +100,8 @@ function FlyTo({ target }) {
 function FitBounds({ places, signal }) {
   const map = useMap();
   useEffect(() => {
-    // guard against places that failed to geocode (network hiccup, rate
-    // limit, etc.) and got stored without valid coordinates — Leaflet throws
-    // on invalid lat/lng, and with no error boundary that crash was very
-    // likely what made the whole map "unresponsive" after adding a link.
-    const valid = places.filter((p) => typeof p.lat === 'number' && typeof p.lng === 'number' && !isNaN(p.lat) && !isNaN(p.lng));
-    if (!valid.length) return;
-    const bounds = L.latLngBounds(valid.map((p) => [p.lat, p.lng]));
+    if (!places.length) return;
+    const bounds = L.latLngBounds(places.map((p) => [p.lat, p.lng]));
     map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
   }, [signal]);
   return null;
@@ -133,16 +128,10 @@ function MarkerLayer({ places }) {
   });
   const prec = zoom <= 12 ? Math.max(1, 9 - Math.floor(zoom)) : 99;
   const buckets = {};
-  // same guard as FitBounds — a place missing valid coords (failed geocode)
-  // would otherwise throw on every pan/zoom via p.lat.toFixed(...), since
-  // this runs again on every zoomend/moveend event. that repeated crash is
-  // very likely the actual "map goes unresponsive" symptom.
-  places
-    .filter((p) => typeof p.lat === 'number' && typeof p.lng === 'number' && !isNaN(p.lat) && !isNaN(p.lng))
-    .forEach((p) => {
-      const key = p.lat.toFixed(prec) + '|' + p.lng.toFixed(prec);
-      (buckets[key] = buckets[key] || []).push(p);
-    });
+  places.forEach((p) => {
+    const key = p.lat.toFixed(prec) + '|' + p.lng.toFixed(prec);
+    (buckets[key] = buckets[key] || []).push(p);
+  });
   return Object.values(buckets).map((bucket) => {
     if (bucket.length === 1) {
       const p = bucket[0];

@@ -1,13 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Check, X, ZoomIn, ChevronRight } from 'lucide-react';
 
-// original-resolution photo editor: shows the image at its true aspect (no
-// squeeze), overlays a composition grid, and lets you freely magnify/drag —
-// clamped so the frame can never show empty space beyond the photo's edges,
-// same as CropModal. "add" now genuinely applies what's framed (sampled at
-// full 1:1 source pixel density, never downscaled) — it previously passed
-// the untouched original through regardless of any pan/zoom, which made the
-// grid and drag/zoom purely cosmetic.
+// original-dimension photo editor: shows the image at its true aspect (no
+// squeeze), overlays a composition grid, and lets you freely magnify/drag to
+// inspect it. the image can never be panned outside its own bounds. "add"
+// stores the original image (full resolution, unchanged).
 export default function PhotoGridEditor({ imageSrc, index = 0, total = 1, onAdd, onSkip, onCancel }) {
   const imgRef = useRef(null);
   const frameRef = useRef(null);
@@ -118,32 +115,6 @@ export default function PhotoGridEditor({ imageSrc, index = 0, total = 1, onAdd,
     setPos(clamp(cx - imgX * ds1, cy - imgY * ds1, natural.w * ds1, natural.h * ds1));
   };
 
-  const buildCroppedOutput = () => {
-    const img = imgRef.current;
-    if (!img || !natural.w || !natural.h || !frame.w) return imageSrc;
-    // sample at full 1:1 source pixel density — this keeps "original
-    // resolution, never downscaled" while actually applying what the grid
-    // frames, instead of the previous pass-through that ignored pan/zoom
-    // entirely.
-    const sx = Math.max(0, (-pos.x) / dispScale);
-    const sy = Math.max(0, (-pos.y) / dispScale);
-    let sw = frame.w / dispScale;
-    let sh = frame.h / dispScale;
-    sw = Math.min(sw, natural.w - sx);
-    sh = Math.min(sh, natural.h - sy);
-    if (sw <= 0 || sh <= 0) return imageSrc;
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(sw));
-    canvas.height = Math.max(1, Math.round(sh));
-    try {
-      canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-      return canvas.toDataURL('image/jpeg', 0.95);
-    } catch {
-      return imageSrc;
-    }
-  };
-  const handleAdd = () => onAdd(buildCroppedOutput());
-
   if (!imageSrc) return null;
 
   return (
@@ -155,7 +126,7 @@ export default function PhotoGridEditor({ imageSrc, index = 0, total = 1, onAdd,
             <X className="w-5 h-5 text-white" />
           </button>
           <h3 className="text-sm font-semibold text-white lowercase">photo {index + 1} of {total}</h3>
-          <button onClick={handleAdd} className="touch-44 w-10 h-10 rounded-full bg-white flex items-center justify-center">
+          <button onClick={() => onAdd(imageSrc)} className="touch-44 w-10 h-10 rounded-full bg-white flex items-center justify-center">
             <Check className="w-5 h-5 text-black" strokeWidth={3} />
           </button>
         </div>
@@ -196,7 +167,7 @@ export default function PhotoGridEditor({ imageSrc, index = 0, total = 1, onAdd,
           <button onClick={onSkip} className="touch-44 px-4 h-11 rounded-xl bg-white/10 text-white text-sm font-medium lowercase flex items-center gap-1">
             skip <ChevronRight className="w-4 h-4" />
           </button>
-          <button onClick={handleAdd} className="touch-44 px-5 h-11 rounded-xl bg-white text-black text-sm font-medium lowercase flex items-center gap-1">
+          <button onClick={() => onAdd(imageSrc)} className="touch-44 px-5 h-11 rounded-xl bg-white text-black text-sm font-medium lowercase flex items-center gap-1">
             <Check className="w-4 h-4" /> add
           </button>
         </div>
