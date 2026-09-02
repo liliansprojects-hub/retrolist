@@ -69,7 +69,15 @@ async function resolveCoords({ url, address }) {
     const parsed = parseMapsUrl(url);
     if (parsed?.lat) coords = parsed;
     else if (parsed?.placeName) coords = await geocode(parsed.placeName);
-    if (!coords && /goo\.gl|maps\.app/i.test(url)) coords = await resolveShortLink(url);
+    // fall back to actually fetching the real Google Maps page and scraping
+    // its embedded coordinates — not just for goo.gl/maps.app short links,
+    // but for ANY maps URL once a plain Nominatim name search comes up
+    // empty. Modern Google share links are often long-format, place-ID-based
+    // URLs (no @lat,lng in the URL itself), and Nominatim's business/venue
+    // name coverage is much weaker than Google's — searching by bare name
+    // frequently fails for real places, while the actual page HTML almost
+    // always has the true coordinates embedded somewhere.
+    if (!coords) coords = await resolveShortLink(url);
   }
   if (!coords && address) coords = await geocode(address);
   return coords;

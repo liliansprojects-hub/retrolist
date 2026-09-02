@@ -37,7 +37,7 @@ export default async function (req) {
     });
 
     const mail = await sendCodeEmail(email, 'your retrolist reset code', 'your password reset code is ' + code + '. it expires in 15 minutes.');
-    if (mail && mail.error) return Response.json({ error: 'email could not be sent' }, { status: 500 });
+    if (mail && mail.error) return Response.json({ error: mail.error }, { status: 500 });
     return Response.json({ sent: true });
   } catch (e) {
     return Response.json({ error: 'failed to send code' }, { status: 500 });

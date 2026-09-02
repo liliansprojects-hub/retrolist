@@ -31,7 +31,7 @@ export default async function (req) {
     });
 
     const mail = await sendCodeEmail(email, 'confirm your email', 'your confirmation code is ' + code + '. it expires in 15 minutes.');
-    if (mail && mail.error) return Response.json({ error: 'email could not be sent' }, { status: 500 });
+    if (mail && mail.error) return Response.json({ error: mail.error }, { status: 500 });
     return Response.json({ sent: true });
   } catch (e) {
     return Response.json({ error: (e && e.message) || 'failed to send code' }, { status: 500 });

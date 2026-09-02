@@ -109,15 +109,14 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
   const totalH = placedM.reduce((m, p) => Math.max(m, p.y + p.h), 0) + extraHRef.current;
 
   const placedRef = useRef(placed); placedRef.current = placed;
-  const foldersRef = useRef(folders); foldersRef.current = folders;
 
   // packItems only carries packing geometry (id/w/h/order) for the skyline
   // math — look the real folder record back up by id so the card/item block
   // gets its actual name/color/items/isItemBlock instead of the stripped
-  // packing object. (this exact bug keeps recurring across exports — every
-  // folder was rendering with undefined name/color/items until this lookup.)
+  // packing object.
   const foldersById = {};
   folders.forEach((fl) => { foldersById[fl.id] = fl; });
+  const foldersRef = useRef(folders); foldersRef.current = folders;
 
   const onMove = useCallback((e) => {
     const d = dragRef.current;
@@ -246,8 +245,18 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
         // arrow handles stay put.
         const boxW = isResizingThis ? dragRef.current.w : p.w;
         const boxH = isResizingThis ? dragRef.current.h : p.h;
+        // resizing via the left/top edge grows width/height from a fixed
+        // top-left anchor by default, which means the box only ever expands
+        // to the right/down regardless of which edge you drag — so pulling
+        // the LEFT handle further left (or TOP handle further up) visually
+        // did nothing in that direction. Shifting the rendered position by
+        // the size delta keeps the *opposite* edge fixed and lets the
+        // dragged edge actually follow the pointer, both directions, on
+        // every edge.
+        const boxX = isResizingThis && dragRef.current.edge === 'left' ? p.x - (boxW - dragRef.current.startW) : p.x;
+        const boxY = isResizingThis && dragRef.current.edge === 'top' ? p.y - (boxH - dragRef.current.startH) : p.y;
         return (
-          <div key={f.id} className={`absolute ${isDraggingThis ? 'shadow-2xl' : ''}`} style={{ left: p.x, top: p.y, width: boxW, height: boxH, zIndex: isDraggingThis ? 30 : undefined, transform: isDraggingThis && dragRef.current.mode === 'move' ? `translate(${dragRef.current.dx || 0}px, ${dragRef.current.dy || 0}px)` : undefined, transition: isDraggingThis ? 'none' : 'left 0.18s ease, top 0.18s ease, width 0.18s ease, height 0.18s ease' }}>
+          <div key={f.id} className={`absolute ${isDraggingThis ? 'shadow-2xl' : ''}`} style={{ left: boxX, top: boxY, width: boxW, height: boxH, zIndex: isDraggingThis ? 30 : undefined, transform: isDraggingThis && dragRef.current.mode === 'move' ? `translate(${dragRef.current.dx || 0}px, ${dragRef.current.dy || 0}px)` : undefined, transition: isDraggingThis ? 'none' : 'left 0.18s ease, top 0.18s ease, width 0.18s ease, height 0.18s ease' }}>
             <div onPointerDown={editMode ? (e) => onBodyDown(e, f) : undefined} className={editMode ? 'w-full h-full cursor-move' : 'w-full h-full'} style={{ touchAction: editMode ? 'none' : undefined }}>
               {full.isItemBlock ? (
                 <ItemBlock folder={full} onClick={editMode ? undefined : () => onOpen(f.id)} onMenu={editMode ? undefined : () => onMenu(full)} />
