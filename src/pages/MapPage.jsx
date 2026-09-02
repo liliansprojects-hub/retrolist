@@ -313,23 +313,23 @@ export default function MapPage() {
         </div>
       )}
 
-      {/* map — collapses when a place is being edited */}
+      {/* map — collapses when a place is being edited. Always rendered
+          (not gated on having any resolved places) so the base map itself
+          is always visible — it previously only rendered once at least one
+          place had valid coordinates, so a place that failed to geocode
+          (network hiccup, etc.) meant no map showed at all, just an empty
+          placeholder, which read as "the map doesn't work". */}
       <div className={`rounded-2xl overflow-hidden mb-4 transition-all duration-300 ${editingPlace ? 'h-36' : 'h-64'}`}>
-        {mappedPlaces.length > 0 ? (
-          <MapContainer center={center} zoom={2} className="w-full h-full" style={{ borderRadius: '1rem' }}>
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; openstreetmap" />
-            <FlyTo target={flyTarget} />
-            <FitBounds places={mappedPlaces} signal={filterSignal} />
-            <MarkerLayer places={mappedPlaces} />
-          </MapContainer>
-        ) : (
-          <div className="w-full h-full bg-muted flex flex-col items-center justify-center text-center p-6">
-            <MapPin className="w-10 h-10 text-muted-foreground/30 mb-2" />
-            <p className="text-sm text-muted-foreground lowercase">no places on map yet</p>
-            <p className="text-xs text-muted-foreground/50 lowercase mt-1">add a place below with a google maps link</p>
-          </div>
-        )}
+        <MapContainer center={center} zoom={mappedPlaces.length ? undefined : 2} className="w-full h-full" style={{ borderRadius: '1rem' }}>
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; openstreetmap" />
+          <FlyTo target={flyTarget} />
+          <FitBounds places={mappedPlaces} signal={filterSignal} />
+          <MarkerLayer places={mappedPlaces} />
+        </MapContainer>
       </div>
+      {mappedPlaces.length === 0 && (
+        <p className="text-xs text-muted-foreground/50 lowercase -mt-2 mb-4">add a place below with a google maps link — it'll appear on the map above once resolved</p>
+      )}
 
       {/* folders */}
       <div className="space-y-2">

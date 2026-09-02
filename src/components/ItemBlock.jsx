@@ -33,11 +33,11 @@ export default function ItemBlock({ folder, onClick, onMenu }) {
       className={cn('card-no-select group relative block rounded-2xl overflow-hidden active:scale-95 transition-transform text-left w-full h-full', !hasColor && 'border border-border')}
       style={bg}
     >
-      {tipLeft && <span className="absolute top-0 bottom-0 left-0 rounded-r-2xl" style={{ width: '12.5%', backgroundColor: item.color }} />}
-      {tipRight && <span className="absolute top-0 bottom-0 right-0 rounded-l-2xl" style={{ width: '12.5%', backgroundColor: item.color }} />}
+      {tipLeft && <span className="absolute top-0 bottom-0 left-0 rounded-r-2xl" style={{ width: '8%', backgroundColor: item.color }} />}
+      {tipRight && <span className="absolute top-0 bottom-0 right-0 rounded-l-2xl" style={{ width: '8%', backgroundColor: item.color }} />}
       <div
         className="relative flex flex-col justify-center h-full gap-1"
-        style={{ paddingLeft: tipLeft ? 'calc(12.5% + 12px)' : '14px', paddingRight: tipRight ? 'calc(12.5% + 12px)' : '14px', ...(contentColor ? { color: contentColor } : {}) }}
+        style={{ paddingLeft: tipLeft ? 'calc(8% + 12px)' : '14px', paddingRight: tipRight ? 'calc(8% + 12px)' : '14px', ...(contentColor ? { color: contentColor } : {}) }}
       >
         <span className={cn('text-sm font-medium lowercase leading-tight line-clamp-4', item.done && 'line-through opacity-60')}>{item.text || 'untitled'}</span>
         {(meta.length > 0 || mediaCount > 0) && (

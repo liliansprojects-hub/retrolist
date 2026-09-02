@@ -97,7 +97,7 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
                 {(() => {
                    const pad = 48;
                    const cx = outerR + pad, cy = outerR + pad;
-                   const innerLabelR = Math.max(28, innerR - innerBtn / 2 - 12);
+                   const innerLabelR = innerR + innerBtn / 2 + 12;
                    const outerLabelR = outerR + outerBtn / 2 + 12;
                   const arc = (r) => `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`;
                   return (
