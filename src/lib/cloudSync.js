@@ -1,4 +1,3 @@
-
 // cloud sync layer that does NOT use Base44's user session / OAuth.
 // all cloud access goes through public backend functions (service role) keyed
 // by the local username + password hash. works from any hosting domain because
@@ -10,6 +9,7 @@ import {
   getAlarms, saveAlarms, getDeletedLog, saveDeletedLog,
 } from './store';
 import { getAccount, saveAccount } from './localAuth';
+import { db } from './base44Client';
 
 let syncing = false;
 

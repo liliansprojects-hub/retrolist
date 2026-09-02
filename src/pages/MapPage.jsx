@@ -337,10 +337,6 @@ export default function MapPage() {
           const hidden = activeFolders !== null && !activeFolders.includes(folder.id);
           return (
             <div key={folder.id} className={`rounded-2xl border border-border ${hidden ? 'opacity-40' : ''}`} style={{ borderLeft: `6px solid ${folder.color || '#888'}` }}>
-              {/* note: no overflow-hidden here (unlike a typical card) — the
-                  "..." dropdown below needs to render outside this folder's
-                  bounds when it's collapsed, and nothing else in this
-                  container needs edge clipping. */}
               <div className="flex items-center gap-3 p-3">
                 <button
                   onClick={() => setExpanded({ ...expanded, [folder.id]: !expanded[folder.id] })}

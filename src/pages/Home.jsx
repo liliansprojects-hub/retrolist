@@ -80,7 +80,7 @@ export default function Home() {
   const ITEM_PARENT = { todo: 'todo', checklist: 'todo', list: 'list', note: 'list', movie: 'movie', series: 'movie', drama: 'movie', book: 'book', audiobook: 'book', magazine: 'book', article: 'book', aspiration: 'aspiration', role: 'aspiration', programme: 'aspiration', course: 'aspiration', exercise: 'habit', saving: 'habit', habit: 'habit', hobby: 'hobby', interest: 'hobby', sport: 'hobby', arts: 'hobby', language: 'hobby', skills: 'hobby', place: 'place' };
   const ITEM_KINDS = new Set(ALL_ITEM_KINDS.map((it) => it.kind));
 
-  const handleSelect = (value) => {
+  const handleSelect = (value, groupIdx) => {
     if (value === 'event') {
       setEventOpen(true);
       return;
@@ -98,7 +98,7 @@ export default function Home() {
       setReminderFolder(null);
       return;
     }
-    if (ITEM_KINDS.has(value)) {
+    if (groupIdx === 1) {
       createItemFlow(value);
       return;
     }
@@ -108,10 +108,7 @@ export default function Home() {
   const createItemFlow = (kind) => {
     const parentType = ITEM_PARENT[kind] || 'list';
     const label = ALL_ITEM_KINDS.find((it) => it.kind === kind)?.label || kind;
-    // soloItem: true marks this as an item-only wrapper so the main page
-    // renders the actual item block (not a folder cover) — see FolderCard's
-    // soloItem branch and the onOpen handling below.
-    const folder = addFolder({ name: 'new ' + label, type: parentType, size: 'portrait', soloItem: true });
+    const folder = addFolder({ name: 'new ' + label, type: parentType, size: 'portrait', isItemBlock: true });
     const it = addItem(folder.id, { text: '', kind });
     setEditingItem({ folderId: folder.id, item: { ...it, __isNew: true } });
     refresh();
@@ -131,9 +128,15 @@ export default function Home() {
   const handleItemDelete = () => {
     if (!editingItem) return;
     const fid = editingItem.folderId;
-    deleteItem(fid, editingItem.item.id);
     const f = getFolders().find((x) => x.id === fid);
-    if (f && (f.items || []).length === 0 && f.name.startsWith('new ')) {
+    if (f && f.isItemBlock) {
+      deleteFolder(fid);
+      setEditingItem(null);
+      refresh();
+      return;
+    }
+    deleteItem(fid, editingItem.item.id);
+    if (f && (f.items || []).length <= 1 && f.name.startsWith('new ')) {
       deleteFolder(fid);
     }
     setEditingItem(null);
@@ -198,33 +201,33 @@ export default function Home() {
   })();
 
   return (
-    <div className="px-8 sm:px-10 pb-6 min-h-screen">
-      <div className="sticky top-0 z-20 -mx-8 sm:-mx-10 px-8 sm:px-10 pt-1 pb-4 safe-top bg-background/95 backdrop-blur-sm">
+    <div className="px-8 sm:px-12 pb-8 pt-2 min-h-screen">
+      <div className="sticky top-0 z-20 -mx-8 sm:-mx-12 px-8 sm:px-12 pb-4 safe-top bg-background/95 backdrop-blur-sm">
       <header className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-3xl font-extrabold lowercase tracking-tight">retrolist</h1>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           <button
             onClick={() => setSearchOpen((s) => !s)}
             className={`w-10 h-10 rounded-full flex items-center justify-center ${searchOpen || query ? 'bg-foreground text-background' : 'bg-muted'}`}
             aria-label="search"
           >
-            <Search className="w-[18px] h-[18px]" />
+            <Search className="w-5 h-5" />
           </button>
           <button
             onClick={toggleLayout}
             className="w-10 h-10 rounded-full bg-muted flex items-center justify-center"
             aria-label="toggle layout"
           >
-            {layout === 'blocks' ? <List className="w-[18px] h-[18px]" /> : <LayoutGrid className="w-[18px] h-[18px]" />}
+            {layout === 'blocks' ? <List className="w-5 h-5" /> : <LayoutGrid className="w-5 h-5" />}
           </button>
           <button
             onClick={() => setCreateType('folder')}
             className="w-10 h-10 rounded-full bg-foreground text-background flex items-center justify-center"
             aria-label="new folder"
           >
-            <FolderPlus className="w-[18px] h-[18px]" />
+            <FolderPlus className="w-5 h-5" />
           </button>
           <button
             onClick={() => navigate('/settings')}
@@ -233,7 +236,7 @@ export default function Home() {
             {profile.avatar ? (
               <img src={profile.avatar} alt="" className="w-full h-full object-cover" />
             ) : (
-              <span className="text-[9px] font-bold uppercase">{profile.name?.slice(0, 1) || 'y'}</span>
+              <span className="text-[8px] font-bold uppercase">{profile.name?.slice(0, 1) || 'y'}</span>
             )}
           </button>
         </div>
@@ -329,17 +332,17 @@ export default function Home() {
               onResize={(id, data) => { updateFolder(id, data); refresh(); }}
               onOpen={(id) => {
                 const f = folders.find((x) => x.id === id);
-                if (f && f.soloItem && (f.items || []).length === 1) {
-                  setEditingItem({ folderId: f.id, item: f.items[0] });
-                } else if (f && f.type === 'reminder') { setReminderFolder(f); setReminderOpen(true); }
+                if (!f) return;
+                if (f.isItemBlock) { setEditingItem({ folderId: f.id, item: (f.items || [])[0] }); return; }
+                if (f.type === 'reminder') { setReminderFolder(f); setReminderOpen(true); }
                 else navigate(`/folder/${id}`);
               }}
-              onMenu={(f) => setMenuFolder(f)}
+              onMenu={(f) => (f.isItemBlock ? setEditingItem({ folderId: f.id, item: (f.items || [])[0] }) : setMenuFolder(f))}
             />
           ) : (
             <div className="space-y-2">
               {visibleFolders.map((f) => (
-                <button key={f.id} onClick={() => { if (f.soloItem && (f.items || []).length === 1) { setEditingItem({ folderId: f.id, item: f.items[0] }); } else if (f.type === 'reminder') { setReminderFolder(f); setReminderOpen(true); } else navigate(`/folder/${f.id}`); }} className="w-full flex items-center gap-3 p-3 rounded-2xl border border-border bg-card active:scale-[0.98] transition-transform text-left">
+                <button key={f.id} onClick={() => { if (f.type === 'reminder') { setReminderFolder(f); setReminderOpen(true); } else navigate(`/folder/${f.id}`); }} className="w-full flex items-center gap-3 p-3 rounded-2xl border border-border bg-card active:scale-[0.98] transition-transform text-left">
                   <span className="w-9 h-9 rounded-xl border-2 border-foreground/40 flex items-center justify-center shrink-0 relative">
                     <Folder className="w-5 h-5 text-foreground/70" strokeWidth={1.75} />
                     {f.pinned && <Pin className="w-3 h-3 absolute -top-1 -right-1 text-foreground fill-foreground" />}

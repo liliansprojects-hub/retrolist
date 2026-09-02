@@ -55,7 +55,7 @@ export default function ItemRow({ item, folderType, onUpdate, onOpen }) {
 
   const short = item.itemHeight === 'short';
   const padY = short ? 'py-1.5' : 'py-3';
-  const minH = short ? 'min-h-[36px]' : 'min-h-[58px]';
+  const minH = short ? 'min-h-[29px]' : 'min-h-[58px]'; // 29 = exactly half of 58
 
   const bg = isFull ? { backgroundColor: item.color + 'D9' } : undefined;
 
@@ -69,21 +69,11 @@ export default function ItemRow({ item, folderType, onUpdate, onOpen }) {
       )}
       style={bg}
     >
-      {tipLeft && (
-        <span
-          className="absolute top-0 bottom-0 left-0"
-          style={{ width: 'max(12.5%, 14px)', backgroundColor: item.color, borderRadius: '0 9999px 9999px 0' }}
-        />
-      )}
-      {tipRight && (
-        <span
-          className="absolute top-0 bottom-0 right-0"
-          style={{ width: 'max(12.5%, 14px)', backgroundColor: item.color, borderRadius: '9999px 0 0 9999px' }}
-        />
-      )}
+      {tipLeft && <span className="absolute top-0 bottom-0 left-0 rounded-r-2xl" style={{ width: '12.5%', backgroundColor: item.color }} />}
+      {tipRight && <span className="absolute top-0 bottom-0 right-0 rounded-l-2xl" style={{ width: '12.5%', backgroundColor: item.color }} />}
       <div
-        className={cn('relative flex items-center gap-2 w-full', tipLeft ? 'pl-10 pr-3' : tipRight ? 'pl-4 pr-10' : 'pl-4 pr-3')}
-        style={contentColor ? { color: contentColor } : undefined}
+        className="relative flex items-center gap-2 w-full"
+        style={{ paddingLeft: tipLeft ? 'calc(12.5% + 12px)' : '16px', paddingRight: tipRight ? 'calc(12.5% + 12px)' : '12px', ...(contentColor ? { color: contentColor } : {}) }}
       >
         {isTodo && (
           <button onClick={toggle} className={cn('touch-44 w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 icon-no-select', item.done ? 'bg-foreground border-foreground' : 'border-border')}>

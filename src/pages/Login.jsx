@@ -3,10 +3,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { LogIn, User, Lock, Loader2 } from 'lucide-react';
+import { LogIn, User, Lock, Mail, Loader2 } from 'lucide-react';
 import AuthLayout from '@/components/AuthLayout';
 import { getAccountByUsername, isLoggedIn, pbkdf2, setLoggedIn, saveAccount } from '@/lib/localAuth';
-import { accountLookupRemote, syncExchange, applySyncedRecords } from '@/lib/cloudSync';
+import { accountLookupRemote, syncExchange, applySyncedRecords, confirmEmailRemote } from '@/lib/cloudSync';
 import { useLocalAuth } from '@/lib/LocalAuthContext';
 
 export default function Login() {
@@ -14,6 +14,7 @@ export default function Login() {
   const { refresh } = useLocalAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -25,15 +26,23 @@ export default function Login() {
     e.preventDefault();
     setError('');
     const u = username.trim().toLowerCase();
+    const em = email.trim().toLowerCase();
     if (!u || !password) { setError('enter your username and password'); return; }
-    if (!navigator.onLine) { setError('go online to sign in — your data stays available offline once you’re in'); return; }
+    if (em && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { setError('enter a valid email'); return; }
     setLoading(true);
     try {
       // device already has this account → verify locally (works offline)
       const local = getAccountByUsername(u);
       if (local) {
         const hash = await pbkdf2(password, local.salt);
-        if (hash !== local.hash) { setError('Incorrect username or password.'); return; }
+        if (hash !== local.hash) { setError('password incorrect'); return; }
+        if (em) {
+          if (!navigator.onLine) { setError('go online to verify your email'); return; }
+          const sent = await confirmEmailRemote(u, em);
+          if (sent && sent.error) { setError(sent.error === 'account not found' ? 'account not found — sync this device first or remove email' : sent.error); return; }
+          navigate('/verify-email', { replace: true, state: { username: u, email: em, isLocal: true } });
+          return;
+        }
         setLoggedIn(u);
         refresh();
         navigate('/', { replace: true });
@@ -41,30 +50,35 @@ export default function Login() {
       }
 
       // new device → fetch salt from the cloud and pull this account's data
-      // (requires internet for this one step, then it's offline again)
       if (!navigator.onLine) {
-        setError('Account not found on this device — go online to sign in.');
+        setError('account not found on this device — go online to sign in');
         return;
       }
       const lookup = await accountLookupRemote(u);
       if (lookup && lookup.error) { setError(lookup.error); return; }
-      if (!lookup || !lookup.exists) { setError('Account not found.'); return; }
+      if (!lookup || !lookup.exists) { setError('account not found'); return; }
 
       const hash = await pbkdf2(password, lookup.salt);
       const res = await syncExchange(u, hash, []);
       if (res && res.error) {
-        setError(res.error === 'unauthorized' ? 'Incorrect username or password.' : res.error);
+        setError(res.error === 'unauthorized' ? 'password incorrect' : res.error);
         return;
       }
       if (res && Array.isArray(res.records)) applySyncedRecords(res.records);
-      saveAccount({ username: u, salt: lookup.salt, hash, updated_date: Date.now() });
+      if (em) {
+        const sent = await confirmEmailRemote(u, em);
+        if (sent && sent.error) { setError(sent.error); return; }
+        navigate('/verify-email', { replace: true, state: { username: u, email: em, salt: lookup.salt, hash, isLocal: false } });
+        return;
+      }
+      saveAccount({ username: u, salt: lookup.salt, hash, email: em || '', email_confirmed: !em, updated_date: Date.now() });
       setLoggedIn(u);
       refresh();
       navigate('/', { replace: true });
     } catch (err) {
       const msg = (err && err.message) || '';
-      if (/not found|404|no such|does not exist/i.test(msg)) setError('Account not found.');
-      else if (/unauthorized|wrong password|invalid/i.test(msg)) setError('Incorrect username or password.');
+      if (/not found|404|no such|does not exist/i.test(msg)) setError('account not found');
+      else if (/unauthorized|wrong password|invalid/i.test(msg)) setError('password incorrect');
       else setError('sign in failed — check your connection and try again');
     } finally {
       setLoading(false);
@@ -124,6 +138,21 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
               className="pl-10 h-12"
               required
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="email">email (optional — verify to sign in)</Label>
+          <div className="relative">
+            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
+            <Input
+              id="email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="pl-10 h-12 lowercase"
             />
           </div>
         </div>

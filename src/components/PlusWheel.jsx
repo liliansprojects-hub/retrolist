@@ -25,17 +25,17 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
   const handlePressEnd = () => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } };
   const handleClick = () => { if (open) { close(); return; } setWheelMode(false); setOpen(true); };
   const close = () => { setOpen(false); setWheelMode(false); };
-  const handleSelect = (value) => { onSelect(value); close(); };
+  const handleSelect = (value, gIdx) => { onSelect(value, gIdx); close(); };
 
   const posClass = position === 'bottom-right' ? 'bottom-24 right-6' : 'bottom-24 left-1/2 -translate-x-1/2';
 
   const renderGroups = () =>
-    groups.map((g) => (
+    groups.map((g, gIdx) => (
       <div key={g.title} className="mb-4">
         <h3 className="text-[11px] font-medium text-muted-foreground lowercase mb-2">{g.title}</h3>
         <div className="grid grid-cols-3 gap-3">
           {g.items.map((item) => (
-            <button key={item.value} onClick={(e) => { e.stopPropagation(); handleSelect(item.value); }} className="touch-44 flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl bg-background border border-border active:scale-95 transition-transform icon-no-select">
+            <button key={item.value} onClick={(e) => { e.stopPropagation(); handleSelect(item.value, gIdx); }} className="touch-44 flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl bg-background border border-border active:scale-95 transition-transform icon-no-select">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: (item.color || '#f4f4f5') + '30' }}>
                 <item.icon className="w-5 h-5 text-foreground" strokeWidth={2} />
               </div>
@@ -47,47 +47,23 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
     ));
 
   const useRadial = vp.w >= 600 && vp.h >= 520;
-  // shrunk considerably from before, with generous margins left around the
-  // whole wheel — it no longer eats most of the screen.
-  const outerR = Math.min(vp.w * 0.28, vp.h * 0.24, 175);
-  const innerR = outerR * 0.52;
+  const outerR = Math.min(vp.w * 0.30, vp.h * 0.32, 210);
+  const innerR = outerR * 0.6;
   const listOpts = groups[0]?.items || [];
   const itemOpts = groups[1]?.items || [];
+  // size each ring's buttons to fit its circumference so nothing overlaps and
+  // every option stays tappable (shrinks only when there isn't room for 44px).
+  const fitBtn = (R, n) => Math.max(28, Math.min(44, Math.floor((2 * Math.PI * R) / Math.max(1, n)) - 4));
+  const innerBtn = fitBtn(innerR, listOpts.length);
+  const outerBtn = fitBtn(outerR, itemOpts.length);
 
-  // a short curved label sitting just outside/inside each ring near the top,
-  // reading along the ring's own curvature — purely decorative, doesn't
-  // affect layout math.
-  const arcLabel = (text, R, id, inside) => {
-    const halfSpan = 0.42; // radians, ~24° each side of straight up
-    const start = -Math.PI / 2 - halfSpan;
-    const end = -Math.PI / 2 + halfSpan;
-    const sx = Math.cos(start) * R, sy = Math.sin(start) * R;
-    const ex = Math.cos(end) * R, ey = Math.sin(end) * R;
-    const size = R * 2 + 40;
-    return (
-      <svg
-        key={id}
-        className="absolute pointer-events-none"
-        style={{ left: -size / 2, top: -size / 2, width: size, height: size, zIndex: 0 }}
-        viewBox={`${-size / 2} ${-size / 2} ${size} ${size}`}
-      >
-        <path id={id} d={`M ${sx} ${sy} A ${R} ${R} 0 0 1 ${ex} ${ey}`} fill="none" />
-        <text className="fill-muted-foreground" style={{ fontSize: 9, letterSpacing: '0.06em' }}>
-          <textPath href={`#${id}`} startOffset="50%" textAnchor="middle">
-            {text}
-          </textPath>
-        </text>
-      </svg>
-    );
-  };
-
-  const ring = (opts, R) =>
+  const ring = (opts, R, gIdx, btn) =>
     opts.map((item, i) => {
       const a = (i / opts.length) * 2 * Math.PI - Math.PI / 2;
       const x = Math.cos(a) * R;
       const y = Math.sin(a) * R;
       return (
-        <button key={item.value} onClick={(e) => { e.stopPropagation(); handleSelect(item.value); }} className="touch-44 absolute flex flex-col items-center justify-center gap-0.5 w-11 h-11 rounded-2xl bg-card border border-border shadow-sm active:scale-90 transition-transform icon-no-select z-[1]" style={{ left: x - 22, top: y - 22 }}>
+        <button key={item.value} onClick={(e) => { e.stopPropagation(); handleSelect(item.value, gIdx); }} className="touch-44 absolute flex flex-col items-center justify-center gap-0.5 rounded-2xl bg-card border border-border shadow-sm active:scale-90 transition-transform icon-no-select" style={{ left: x - btn / 2, top: y - btn / 2, width: btn, height: btn }}>
           <item.icon className="w-4 h-4 text-foreground" strokeWidth={2} />
           <span className="text-[7px] lowercase text-muted-foreground leading-none">{item.label}</span>
         </button>
@@ -118,13 +94,32 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
           {wheelMode && useRadial ? (
             <div className="absolute inset-0 flex items-center justify-center" onClick={close}>
               <div className="relative" style={{ width: 1, height: 1 }} onClick={(e) => e.stopPropagation()}>
-                <button onClick={close} className="touch-44 absolute w-14 h-14 rounded-full bg-foreground text-background flex items-center justify-center shadow-lg z-10" style={{ left: -28, top: -28 }}>
-                  <X className="w-6 h-6" />
+                {(() => {
+                   const pad = 48;
+                   const cx = outerR + pad, cy = outerR + pad;
+                   const innerLabelR = Math.max(28, innerR - innerBtn / 2 - 12);
+                   const outerLabelR = outerR + outerBtn / 2 + 12;
+                  const arc = (r) => `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`;
+                  return (
+                    <svg className="absolute pointer-events-none" style={{ left: -(outerR + pad), top: -(outerR + pad), width: 2 * (outerR + pad), height: 2 * (outerR + pad) }} viewBox={`0 0 ${2 * (outerR + pad)} ${2 * (outerR + pad)}`}>
+                      <defs>
+                        <path id="b44-inner-label" d={arc(innerLabelR)} fill="none" />
+                        <path id="b44-outer-label" d={arc(outerLabelR)} fill="none" />
+                      </defs>
+                      <text style={{ fontSize: 9, letterSpacing: 1, fill: 'hsl(var(--muted-foreground))' }}>
+                        <textPath href="#b44-inner-label" startOffset="50%" textAnchor="middle">lists</textPath>
+                      </text>
+                      <text style={{ fontSize: 9, letterSpacing: 1, fill: 'hsl(var(--muted-foreground))' }}>
+                        <textPath href="#b44-outer-label" startOffset="50%" textAnchor="middle">items</textPath>
+                      </text>
+                    </svg>
+                  );
+                })()}
+                <button onClick={close} className="touch-44 absolute w-12 h-12 rounded-full bg-foreground text-background flex items-center justify-center shadow-lg z-10" style={{ left: -24, top: -24 }}>
+                  <X className="w-5 h-5" />
                 </button>
-                {arcLabel('lists', Math.max(innerR - 26, 40), 'wheel-label-inner')}
-                {arcLabel('items', outerR + 24, 'wheel-label-outer')}
-                {ring(listOpts, innerR)}
-                {ring(itemOpts, outerR)}
+                {ring(listOpts, innerR, 0, innerBtn)}
+                {ring(itemOpts, outerR, 1, outerBtn)}
               </div>
             </div>
           ) : (

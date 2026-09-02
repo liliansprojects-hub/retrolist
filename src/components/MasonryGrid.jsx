@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import FolderCard from './FolderCard';
+import ItemBlock from './ItemBlock';
 import { BLOCK_SIZES } from '@/lib/store';
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -67,6 +68,7 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
   const ref = useRef(null);
   const [width, setWidth] = useState(0);
   const dragRef = useRef(null);
+  const extraHRef = useRef(0);
   const [, force] = useState(0);
   const rerender = () => force((x) => x + 1);
   const onResizeRef = useRef(onResize);
@@ -96,7 +98,7 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
   });
 
   const packItems = items.slice().sort((a, b) => a.order - b.order);
-  if (dragRef.current) {
+  if (dragRef.current && dragRef.current.mode === 'resize') {
     const idx = packItems.findIndex((it) => it.id === dragRef.current.id);
     if (idx >= 0) packItems[idx] = { ...packItems[idx], w: dragRef.current.w, h: dragRef.current.h };
   }
@@ -104,32 +106,40 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
   const placed = width > 0 ? packSkyline(packItems, width) : [];
   // add horizontal margin so blocks never touch the viewport edge or each other
   const placedM = placed.map((p) => ({ ...p, x: p.x + H_MARGIN, w: Math.max(MIN_W, p.w - 2 * H_MARGIN) }));
-  const totalH = placedM.reduce((m, p) => Math.max(m, p.y + p.h), 0);
+  const totalH = placedM.reduce((m, p) => Math.max(m, p.y + p.h), 0) + extraHRef.current;
 
   const placedRef = useRef(placed); placedRef.current = placed;
   const foldersRef = useRef(folders); foldersRef.current = folders;
 
   // packItems only carries packing geometry (id/w/h/order) for the skyline
-  // math — look the real folder record back up by id so the card gets its
-  // actual name/color/items/soloItem instead of the stripped packing object.
+  // math — look the real folder record back up by id so the card/item block
+  // gets its actual name/color/items/isItemBlock instead of the stripped
+  // packing object. (this exact bug keeps recurring across exports — every
+  // folder was rendering with undefined name/color/items until this lookup.)
   const foldersById = {};
-  folders.forEach((f) => { foldersById[f.id] = f; });
+  folders.forEach((fl) => { foldersById[fl.id] = fl; });
 
   const onMove = useCallback((e) => {
     const d = dragRef.current;
     if (!d) return;
-    const dx = e.clientX - d.startX;
-    const dy = e.clientY - d.startY;
+    const rect = ref.current.getBoundingClientRect();
+    const localX = e.clientX - rect.left;
+    const localY = e.clientY - rect.top;
     if (d.mode === 'move') {
-      // the held block follows the finger (transform) while others auto-shift
+      // the held block follows the finger (delta transform) while others auto-shift
       // (insert-and-shift reorder). on release the block settles into its new
-      // slot. lastInsert avoids jitter on repeated moves.
-      const lastX = e.clientX, lastY = e.clientY;
-      dragRef.current = { ...d, lastX, lastY };
+      // slot. lastInsert avoids jitter on repeated moves. pointer coords are
+      // converted to the grid's own space so hover/insert detection matches the
+      // packed layout (no viewport-offset drift, no blocks vanishing).
+      const dx = e.clientX - d.startX;
+      const dy = e.clientY - d.startY;
+      dragRef.current = { ...d, lastX: e.clientX, lastY: e.clientY, dx, dy };
       rerender();
       const cur = placedRef.current;
+      const maxBottom0 = cur.reduce((m, p) => Math.max(m, p.y + p.h), 0);
+      extraHRef.current = localY > maxBottom0 ? Math.max(0, localY - maxBottom0 + 100) : 0;
       const all = foldersRef.current;
-      const over = cur.find((p) => p.id !== d.id && lastX >= p.x && lastX <= p.x + p.w && lastY >= p.y && lastY <= p.y + p.h);
+      const over = cur.find((p) => p.id !== d.id && localX >= p.x && localX <= p.x + p.w && localY >= p.y && localY <= p.y + p.h);
       if (over) {
         const ids = all.map((f) => f.id);
         const orders = all.map((f, i) => f.order != null ? f.order : i);
@@ -137,7 +147,7 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
         const fromIdx = sorted.indexOf(d.id);
         if (fromIdx >= 0) {
           sorted.splice(fromIdx, 1);
-          const above = lastY < over.y + over.h / 2;
+          const above = localY < over.y + over.h / 2;
           let insertAt = sorted.indexOf(over.id);
           if (!above) insertAt += 1;
           if (insertAt === d.lastInsert) return;
@@ -151,7 +161,7 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
         // empty space below all blocks → send the held block to the end so it
         // settles at the bottom (free space below). lastInsert guards jitter.
         const maxBottom = cur.reduce((m, p) => Math.max(m, p.y + p.h), 0);
-        if (lastY > maxBottom) {
+        if (localY > maxBottom) {
           const ids = all.map((f) => f.id);
           const orders = all.map((f, i) => f.order != null ? f.order : i);
           const sorted = ids.map((id, i) => ({ id, o: orders[i] })).sort((a, b) => a.o - b.o).map((s) => s.id);
@@ -168,6 +178,8 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
       }
       return;
     }
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
     let nw = d.startW;
     let nh = d.startH;
     if (d.edge === 'right') nw = d.startW + dx;
@@ -184,6 +196,7 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
     const d = dragRef.current;
     if (d && d.mode === 'resize') onResizeRef.current(d.id, { w: d.w, h: d.h });
     dragRef.current = null;
+    extraHRef.current = 0;
     rerender();
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
@@ -224,10 +237,23 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
       {placedM.map((p, i) => {
         const f = packItems[i];
         const full = foldersById[f.id] || f;
+        const isDraggingThis = dragRef.current && dragRef.current.id === f.id;
+        const isResizingThis = isDraggingThis && dragRef.current.mode === 'resize';
+        // during resize, size the box from the live drag values directly —
+        // not the packer's in-progress recomputed position, which re-runs on
+        // every pixel of a resize and can momentarily collapse this item's
+        // box, making the card vanish while the (independently positioned)
+        // arrow handles stay put.
+        const boxW = isResizingThis ? dragRef.current.w : p.w;
+        const boxH = isResizingThis ? dragRef.current.h : p.h;
         return (
-          <div key={f.id} className="absolute" style={{ left: p.x, top: p.y, width: p.w, height: p.h, zIndex: dragRef.current && dragRef.current.id === f.id && dragRef.current.mode === 'move' ? 30 : undefined, transform: dragRef.current && dragRef.current.id === f.id && dragRef.current.mode === 'move' ? `translate(${dragRef.current.lastX - p.x}px, ${dragRef.current.lastY - p.y}px)` : undefined, transition: dragRef.current && dragRef.current.id === f.id ? 'none' : 'left 0.18s ease, top 0.18s ease, width 0.18s ease, height 0.18s ease' }}>
+          <div key={f.id} className={`absolute ${isDraggingThis ? 'shadow-2xl' : ''}`} style={{ left: p.x, top: p.y, width: boxW, height: boxH, zIndex: isDraggingThis ? 30 : undefined, transform: isDraggingThis && dragRef.current.mode === 'move' ? `translate(${dragRef.current.dx || 0}px, ${dragRef.current.dy || 0}px)` : undefined, transition: isDraggingThis ? 'none' : 'left 0.18s ease, top 0.18s ease, width 0.18s ease, height 0.18s ease' }}>
             <div onPointerDown={editMode ? (e) => onBodyDown(e, f) : undefined} className={editMode ? 'w-full h-full cursor-move' : 'w-full h-full'} style={{ touchAction: editMode ? 'none' : undefined }}>
-              <FolderCard fill folder={full} onClick={editMode ? undefined : () => onOpen(f.id)} onMenu={editMode ? undefined : () => onMenu(full)} />
+              {full.isItemBlock ? (
+                <ItemBlock folder={full} onClick={editMode ? undefined : () => onOpen(f.id)} onMenu={editMode ? undefined : () => onMenu(full)} />
+              ) : (
+                <FolderCard fill folder={full} onClick={editMode ? undefined : () => onOpen(f.id)} onMenu={editMode ? undefined : () => onMenu(full)} />
+              )}
             </div>
             {editMode && (
               <>

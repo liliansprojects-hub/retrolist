@@ -134,7 +134,7 @@ export default function FolderDetail() {
   return (
     <div className="min-h-screen">
       {/* header with cover */}
-      <div className="safe-top px-6 sm:px-8 pb-4 border-b border-border">
+      <div className="safe-top px-6 sm:px-8 pb-4">
         <div className="flex items-center justify-between mb-3">
           <button
             onClick={() => navigate('/')}
