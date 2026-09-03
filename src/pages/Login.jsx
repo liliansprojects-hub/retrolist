@@ -36,6 +36,17 @@ export default function Login() {
       if (local) {
         const hash = await pbkdf2(password, local.salt);
         if (hash !== local.hash) { setError('password incorrect'); return; }
+        if (local.pending) {
+          // registered with an email but never finished verifying it — this
+          // account isn't real yet (see Register.jsx), so route back to
+          // verification instead of letting them straight in. Resend a
+          // fresh code since the original may have expired by now.
+          if (!navigator.onLine) { setError('go online to finish verifying your email'); return; }
+          const sent = await confirmEmailRemote(u, local.email);
+          if (sent && sent.error) { setError(sent.error); return; }
+          navigate('/verify-email', { replace: true, state: { username: u, email: local.email, isLocal: true } });
+          return;
+        }
         if (em) {
           if (!navigator.onLine) { setError('go online to verify your email'); return; }
           const sent = await confirmEmailRemote(u, em);

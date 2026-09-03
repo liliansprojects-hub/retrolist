@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { UserPlus, User, Lock, Mail, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import AuthLayout from '@/components/AuthLayout';
-import { registerLocal, getAccountByUsername, isLoggedIn, setLoggedIn, clearSession } from '@/lib/localAuth';
+import { registerLocal, getAccountByUsername, isLoggedIn, setLoggedIn, clearSession, saveAccount } from '@/lib/localAuth';
 import { accountLookupRemote, syncNow, confirmEmailRemote } from '@/lib/cloudSync';
 import { useLocalAuth } from '@/lib/LocalAuthContext';
 
@@ -69,6 +69,13 @@ export default function Register() {
         // verify the email (same 4-digit code flow as recovery) before landing on the main page
         if (!navigator.onLine) { setError('go online to verify your email'); return; }
         await registerLocal(u, password, '', false); // create account, don't log in yet
+        // mark it pending — this account isn't real until email verification
+        // succeeds. Without this, the local record created above (needed so
+        // the cloud sync/email round-trip below has something to push) was
+        // fully usable to log in even if the user abandoned the verify page
+        // without ever confirming the email at all.
+        const acctBeforeSync = getAccountByUsername(u);
+        if (acctBeforeSync) saveAccount({ ...acctBeforeSync, pending: true });
         setLoggedIn(u); // temp session so sync can push the account to the cloud
         await syncNow();
         clearSession();

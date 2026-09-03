@@ -31,7 +31,12 @@ export default function CropModal({ imageSrc, aspect = 1, round = false, maxSize
   useEffect(() => {
     const fit = () => {
       const el = wrapRef.current;
-      const avail = el ? el.getBoundingClientRect().width : Math.min(window.innerWidth - 48, 340);
+      // getBoundingClientRect().width includes the wrapper's own padding
+      // (px-6 = 24px each side) — subtract it so the frame is sized to the
+      // actual available content box, not the full padded box, which could
+      // otherwise make the frame slightly wider than its parent truly has
+      // room for on narrow screens.
+      const avail = el ? el.getBoundingClientRect().width - 48 : Math.min(window.innerWidth - 48, 340);
       const maxW = Math.min(avail, 340);
       const maxH = Math.min(window.innerHeight * 0.45, 340);
       // frame is locked to the CHOSEN orientation's aspect ratio (the aspect

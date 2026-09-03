@@ -135,46 +135,66 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
       dragRef.current = { ...d, lastX: e.clientX, lastY: e.clientY, dx, dy };
       rerender();
       const cur = placedRef.current;
-      const maxBottom0 = cur.reduce((m, p) => Math.max(m, p.y + p.h), 0);
-      extraHRef.current = localY > maxBottom0 ? Math.max(0, localY - maxBottom0 + 100) : 0;
+      const others = cur.filter((p) => p.id !== d.id);
+      const maxBottom = others.reduce((m, p) => Math.max(m, p.y + p.h), 0);
+      // extra scroll room appears as soon as you drag past the last block,
+      // so there's always somewhere to drop below everything, however far
+      // down you drag.
+      extraHRef.current = localY > maxBottom ? Math.max(0, localY - maxBottom + 100) : 0;
       const all = foldersRef.current;
-      const over = cur.find((p) => p.id !== d.id && localX >= p.x && localX <= p.x + p.w && localY >= p.y && localY <= p.y + p.h);
-      if (over) {
-        const ids = all.map((f) => f.id);
-        const orders = all.map((f, i) => f.order != null ? f.order : i);
-        const sorted = ids.map((id, i) => ({ id, o: orders[i] })).sort((a, b) => a.o - b.o).map((s) => s.id);
-        const fromIdx = sorted.indexOf(d.id);
-        if (fromIdx >= 0) {
-          sorted.splice(fromIdx, 1);
-          const above = localY < over.y + over.h / 2;
-          let insertAt = sorted.indexOf(over.id);
-          if (!above) insertAt += 1;
-          if (insertAt === d.lastInsert) return;
-          sorted.splice(insertAt, 0, d.id);
-          const map = {};
-          sorted.forEach((id, i) => { map[id] = i; });
-          dragRef.current = { ...dragRef.current, lastInsert: insertAt };
-          all.forEach((f) => onResizeRef.current(f.id, { order: map[f.id] }));
-        }
-      } else {
-        // empty space below all blocks → send the held block to the end so it
-        // settles at the bottom (free space below). lastInsert guards jitter.
-        const maxBottom = cur.reduce((m, p) => Math.max(m, p.y + p.h), 0);
-        if (localY > maxBottom) {
-          const ids = all.map((f) => f.id);
-          const orders = all.map((f, i) => f.order != null ? f.order : i);
-          const sorted = ids.map((id, i) => ({ id, o: orders[i] })).sort((a, b) => a.o - b.o).map((s) => s.id);
-          const fromIdx = sorted.indexOf(d.id);
-          if (fromIdx >= 0 && fromIdx !== sorted.length - 1) {
-            sorted.splice(fromIdx, 1);
-            sorted.push(d.id);
-            const map = {};
-            sorted.forEach((id, i) => { map[id] = i; });
-            dragRef.current = { ...dragRef.current, lastInsert: sorted.length - 1 };
-            all.forEach((f) => onResizeRef.current(f.id, { order: map[f.id] }));
-          }
-        }
+
+      if (!others.length) return;
+
+      // nearest-block targeting instead of strict "must be directly over a
+      // block's rectangle" — that was the actual gap: dragging into a
+      // margin, a column gutter, or the empty space beside the last block
+      // in a row (before the wall) found nothing and did nothing. Distance
+      // to each block's center always finds a reasonable target, so
+      // reordering now works from any drop point, not just on top of
+      // another block.
+      let nearest = others[0];
+      let bestDist = Infinity;
+      for (const p of others) {
+        const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+        const dist = Math.hypot(localX - cx, localY - cy);
+        if (dist < bestDist) { bestDist = dist; nearest = p; }
       }
+      // below everything: always goes to the very end, regardless of which
+      // block happens to be nearest by raw distance — this is what makes
+      // "slide down to fit below the last block" work reliably.
+      const target = localY > maxBottom ? null : nearest;
+
+      const ids = all.map((f) => f.id);
+      const orders = all.map((f, i) => f.order != null ? f.order : i);
+      const sorted = ids.map((id, i) => ({ id, o: orders[i] })).sort((a, b) => a.o - b.o).map((s) => s.id);
+      const fromIdx = sorted.indexOf(d.id);
+      if (fromIdx < 0) return;
+
+      let insertAt;
+      if (target === null) {
+        insertAt = sorted.length; // one-past-the-end — "after the last element", not "at" it
+      } else {
+        // same half-block threshold as before: crossing the midpoint of the
+        // nearest block (vertically, or horizontally when roughly in the
+        // same row) is what triggers the shift — this is what makes "slide
+        // right to fit between the rightmost block and the wall" work, since
+        // being past a same-row block's horizontal midpoint inserts after it.
+        const sameRow = localY > target.y - target.h * 0.15 && localY < target.y + target.h * 1.15;
+        const before = sameRow
+          ? localX < target.x + target.w / 2
+          : localY < target.y + target.h / 2;
+        insertAt = sorted.indexOf(target.id);
+        if (!before) insertAt += 1;
+      }
+      sorted.splice(fromIdx, 1);
+      if (insertAt > fromIdx) insertAt -= 1; // account for the removal shifting later indices down
+      insertAt = Math.max(0, Math.min(sorted.length, insertAt));
+      if (insertAt === d.lastInsert) return;
+      sorted.splice(insertAt, 0, d.id);
+      const map = {};
+      sorted.forEach((id, i) => { map[id] = i; });
+      dragRef.current = { ...dragRef.current, lastInsert: insertAt };
+      all.forEach((f) => onResizeRef.current(f.id, { order: map[f.id] }));
       return;
     }
     const dx = e.clientX - d.startX;

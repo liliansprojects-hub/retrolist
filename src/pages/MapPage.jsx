@@ -48,19 +48,35 @@ async function geocode(address) {
 }
 
 async function resolveShortLink(url) {
-  try {
-    const proxied = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
-    const res = await fetch(proxied, { redirect: 'follow' });
-    const finalUrl = res.url || url;
-    const coords = parseMapsUrl(finalUrl);
-    if (coords && coords.lat) return coords;
-    const text = await res.text();
-    const og = text.match(/property="og:image"[^>]*url=([^"&]+)/) || text.match(/"https:[^"]+maps[^"]+@(-?\d+\.\d+),(-?\d+\.\d+)/);
-    if (og && og.length >= 3) return { lat: parseFloat(og[1]), lng: parseFloat(og[2]) };
-    return parseMapsUrl(finalUrl);
-  } catch {
-    return null;
+  // try more than one public CORS proxy — if corsproxy.io is down, rate
+  // limited, or has changed its API (this is exactly the kind of failure
+  // that would break identically on Base44's own hosting too, since this
+  // all runs client-side regardless of where the frontend is deployed),
+  // a second option gives this a real chance of still working.
+  const proxies = [
+    (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  ];
+  for (const buildProxyUrl of proxies) {
+    try {
+      const res = await fetch(buildProxyUrl(url), { redirect: 'follow' });
+      const finalUrl = res.url || url;
+      const coords = parseMapsUrl(finalUrl);
+      if (coords && coords.lat) return coords;
+      const text = await res.text();
+      // the old og:image regex here only ever had 1 capture group, so it
+      // could never actually satisfy the length check below — it silently
+      // never worked. Removed; this @lat,lng search is the one that
+      // actually finds coordinates embedded anywhere in the page's HTML.
+      const embedded = text.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || text.match(/"lat['"]?\s*:\s*(-?\d+\.\d+)[^}]*"lng['"]?\s*:\s*(-?\d+\.\d+)/);
+      if (embedded) return { lat: parseFloat(embedded[1]), lng: parseFloat(embedded[2]) };
+      const fromFinal = parseMapsUrl(finalUrl);
+      if (fromFinal && fromFinal.lat) return fromFinal;
+    } catch {
+      // try the next proxy
+    }
   }
+  return null;
 }
 
 async function resolveCoords({ url, address }) {

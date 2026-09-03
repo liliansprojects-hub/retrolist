@@ -32,7 +32,10 @@ export default function VerifyEmail() {
       saveAccount({ username, salt, hash, email, email_confirmed: true, updated_date: Date.now() });
     } else {
       const acc = getAccountByUsername(username);
-      if (acc) saveAccount({ ...acc, email, email_confirmed: true, updated_date: Date.now() });
+      // clear `pending` here — this is the moment the account actually
+      // becomes real; abandoning this page before this point leaves the
+      // account permanently pending (unable to log in), which is correct.
+      if (acc) saveAccount({ ...acc, email, email_confirmed: true, pending: false, updated_date: Date.now() });
     }
     setLoggedIn(username);
     refresh();
