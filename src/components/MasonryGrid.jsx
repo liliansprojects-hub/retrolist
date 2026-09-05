@@ -174,15 +174,19 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
       if (target === null) {
         insertAt = sorted.length; // one-past-the-end — "after the last element", not "at" it
       } else {
-        // same half-block threshold as before: crossing the midpoint of the
-        // nearest block (vertically, or horizontally when roughly in the
-        // same row) is what triggers the shift — this is what makes "slide
-        // right to fit between the rightmost block and the wall" work, since
-        // being past a same-row block's horizontal midpoint inserts after it.
-        const sameRow = localY > target.y - target.h * 0.15 && localY < target.y + target.h * 1.15;
-        const before = sameRow
-          ? localX < target.x + target.w / 2
-          : localY < target.y + target.h / 2;
+        // whichever axis the drag point is predominantly offset from the
+        // target's center along decides before/after — this replaces a
+        // fixed-tolerance "are we in the same row" guess, which could
+        // misfire between blocks of different heights (a tall dragged block
+        // vs a short target, or vice versa) and silently pick the wrong axis,
+        // which is exactly what would make left-right dragging or
+        // between-two-blocks insertion fail to register correctly while
+        // top-down happened to still work (or vice versa).
+        const targetCx = target.x + target.w / 2;
+        const targetCy = target.y + target.h / 2;
+        const offX = localX - targetCx;
+        const offY = localY - targetCy;
+        const before = Math.abs(offX) > Math.abs(offY) ? offX < 0 : offY < 0;
         insertAt = sorted.indexOf(target.id);
         if (!before) insertAt += 1;
       }

@@ -1,16 +1,20 @@
 import React, { useState } from 'react';
 import { Mail, AlertCircle, Loader2, Check } from 'lucide-react';
 import { getAccount, saveAccount } from '@/lib/localAuth';
-import { confirmEmailRemote, verifyEmailRemote } from '@/lib/cloudSync';
+import { sendCode as sendCodeRemote, verifyCode } from '@/lib/localEmailAuth';
 
 // recovery email management: shows the account's email + confirmation status.
 // if missing or unconfirmed, a subtle red notice prompts the user to add/confirm.
-// adding/changing emails a 4-digit code (via Resend) which must be entered to confirm.
+// adding/changing an email sends a real 4-digit code (via a Netlify Function
+// using Gmail) which must be entered to confirm — moved off Base44 after
+// confirming its version accepted any code as valid and wasn't reliably
+// sending mail.
 export default function EmailSection() {
   const [acc, setAcc] = useState(getAccount());
   const [email, setEmail] = useState(acc?.email || '');
   const [step, setStep] = useState(0); // 0 idle, 1 awaiting code
   const [code, setCode] = useState('');
+  const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -23,8 +27,9 @@ export default function EmailSection() {
     if (!email.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) { setErr('enter a valid email'); return; }
     setBusy(true);
     try {
-      const res = await confirmEmailRemote(acc.username, email.trim());
+      const res = await sendCodeRemote(email.trim(), 'confirm');
       if (res && res.error) { setErr(res.error); setBusy(false); return; }
+      setToken(res.token);
       setStep(1);
     } catch (e) { setErr((e && e.message) || 'failed to send'); }
     setBusy(false);
@@ -32,15 +37,17 @@ export default function EmailSection() {
 
   const confirm = async () => {
     setErr('');
+    if (!token) { setErr('code expired — tap resend'); return; }
     setBusy(true);
     try {
-      const res = await verifyEmailRemote(acc.username, email.trim(), code.trim());
-      if (res && res.error) { setErr(res.error); setBusy(false); return; }
+      const res = await verifyCode(token, code.trim());
+      if (!res.valid) { setErr(res.error === 'invalid or expired code' ? 'wrong or expired code' : (res.error || 'wrong or expired code')); setBusy(false); return; }
       const updated = { ...acc, email: email.trim().toLowerCase(), email_confirmed: true, updated_date: Date.now() };
       saveAccount(updated);
       setAcc(updated);
       setStep(0);
       setCode('');
+      setToken('');
     } catch (e) { setErr((e && e.message) || 'failed'); }
     setBusy(false);
   };

@@ -6,7 +6,8 @@ import { Label } from '@/components/ui/label';
 import { LogIn, User, Lock, Mail, Loader2 } from 'lucide-react';
 import AuthLayout from '@/components/AuthLayout';
 import { getAccountByUsername, isLoggedIn, pbkdf2, setLoggedIn, saveAccount } from '@/lib/localAuth';
-import { accountLookupRemote, syncExchange, applySyncedRecords, confirmEmailRemote } from '@/lib/cloudSync';
+import { accountLookupRemote, syncExchange, applySyncedRecords } from '@/lib/cloudSync';
+import { sendCode } from '@/lib/localEmailAuth';
 import { useLocalAuth } from '@/lib/LocalAuthContext';
 
 export default function Login() {
@@ -42,16 +43,16 @@ export default function Login() {
           // verification instead of letting them straight in. Resend a
           // fresh code since the original may have expired by now.
           if (!navigator.onLine) { setError('go online to finish verifying your email'); return; }
-          const sent = await confirmEmailRemote(u, local.email);
+          const sent = await sendCode(local.email, 'confirm');
           if (sent && sent.error) { setError(sent.error); return; }
-          navigate('/verify-email', { replace: true, state: { username: u, email: local.email, isLocal: true } });
+          navigate('/verify-email', { replace: true, state: { username: u, email: local.email, isLocal: true, token: sent.token } });
           return;
         }
         if (em) {
           if (!navigator.onLine) { setError('go online to verify your email'); return; }
-          const sent = await confirmEmailRemote(u, em);
-          if (sent && sent.error) { setError(sent.error === 'account not found' ? 'account not found — sync this device first or remove email' : sent.error); return; }
-          navigate('/verify-email', { replace: true, state: { username: u, email: em, isLocal: true } });
+          const sent = await sendCode(em, 'confirm');
+          if (sent && sent.error) { setError(sent.error); return; }
+          navigate('/verify-email', { replace: true, state: { username: u, email: em, isLocal: true, token: sent.token } });
           return;
         }
         setLoggedIn(u);
@@ -77,9 +78,9 @@ export default function Login() {
       }
       if (res && Array.isArray(res.records)) applySyncedRecords(res.records);
       if (em) {
-        const sent = await confirmEmailRemote(u, em);
+        const sent = await sendCode(em, 'confirm');
         if (sent && sent.error) { setError(sent.error); return; }
-        navigate('/verify-email', { replace: true, state: { username: u, email: em, salt: lookup.salt, hash, isLocal: false } });
+        navigate('/verify-email', { replace: true, state: { username: u, email: em, salt: lookup.salt, hash, isLocal: false, token: sent.token } });
         return;
       }
       saveAccount({ username: u, salt: lookup.salt, hash, email: em || '', email_confirmed: !em, updated_date: Date.now() });

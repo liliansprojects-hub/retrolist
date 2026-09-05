@@ -39,10 +39,20 @@ async function geocode(address) {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`
     );
+    if (!res.ok) {
+      // this was silently swallowed before — if Nominatim is rate-limiting
+      // or rejecting requests from this domain (their usage policy
+      // discourages heavy automated use without an identifying header,
+      // which a browser's fetch() can't set anyway), this is exactly what
+      // would produce "places never get coordinates, no error ever shows".
+      console.warn('[map] nominatim request failed:', res.status, res.statusText);
+      return null;
+    }
     const data = await res.json();
     if (data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-  } catch {
-    /* offline — store without coords */
+    console.log('[map] nominatim returned no results for:', address);
+  } catch (err) {
+    console.warn('[map] nominatim request threw:', err);
   }
   return null;
 }
@@ -83,8 +93,11 @@ async function resolveCoords({ url, address }) {
   let coords = null;
   if (url) {
     const parsed = parseMapsUrl(url);
-    if (parsed?.lat) coords = parsed;
-    else if (parsed?.placeName) coords = await geocode(parsed.placeName);
+    if (parsed?.lat) { coords = parsed; console.log('[map] resolved from URL directly:', coords); }
+    else if (parsed?.placeName) {
+      coords = await geocode(parsed.placeName);
+      console.log('[map] geocode by place name', parsed.placeName, '->', coords);
+    }
     // fall back to actually fetching the real Google Maps page and scraping
     // its embedded coordinates — not just for goo.gl/maps.app short links,
     // but for ANY maps URL once a plain Nominatim name search comes up
@@ -93,9 +106,16 @@ async function resolveCoords({ url, address }) {
     // name coverage is much weaker than Google's — searching by bare name
     // frequently fails for real places, while the actual page HTML almost
     // always has the true coordinates embedded somewhere.
-    if (!coords) coords = await resolveShortLink(url);
+    if (!coords) {
+      coords = await resolveShortLink(url);
+      console.log('[map] fallback page-scrape ->', coords);
+    }
   }
-  if (!coords && address) coords = await geocode(address);
+  if (!coords && address) {
+    coords = await geocode(address);
+    console.log('[map] geocode by address', address, '->', coords);
+  }
+  if (!coords) console.warn('[map] could not resolve any coordinates for', { url, address }, '— see the steps logged above for which method was tried and what it returned');
   return coords;
 }
 
@@ -261,6 +281,18 @@ export default function MapPage() {
   };
 
   const showAll = () => { setActiveFolders(null); setFilterSignal((s) => s + 1); };
+
+  const [retryingId, setRetryingId] = useState(null);
+  const retryResolve = async (folder, place) => {
+    if (!navigator.onLine) return;
+    setRetryingId(place.id);
+    const coords = await resolveCoords({ url: place.url, address: place.address });
+    setRetryingId(null);
+    if (coords?.lat) {
+      updatePlace(folder.id, place.id, { lat: coords.lat, lng: coords.lng });
+      refresh();
+    }
+  };
 
   const handleAddFolder = () => {
     if (!newFolderName.trim()) return;
@@ -434,6 +466,18 @@ export default function MapPage() {
                         <p className="text-sm font-medium lowercase truncate">{p.name}</p>
                         {p.subheading && <p className="text-xs text-muted-foreground lowercase truncate">{p.subheading}</p>}
                         {p.notes ? <p className="text-xs text-muted-foreground truncate">{p.notes}</p> : (p.address ? <p className="text-xs text-muted-foreground/70 truncate">{p.address}</p> : null)}
+                        {!p.lat && (p.url || p.address) && (
+                          <p className="text-xs text-destructive lowercase flex items-center gap-1 mt-0.5">
+                            location not found
+                            <button
+                              onClick={(e) => { e.stopPropagation(); retryResolve(folder, p); }}
+                              className="touch-44 underline"
+                              disabled={retryingId === p.id}
+                            >
+                              {retryingId === p.id ? 'retrying…' : 'retry'}
+                            </button>
+                          </p>
+                        )}
                       </div>
                       <button
                         onClick={() => { setEditingPlace({ folderId: folder.id, place: p }); }}

@@ -1,0 +1,5 @@
+# public/_redirects already handles SPA routing (BrowserRouter needs every
+# path to serve index.html) — this file is only here to declare where the
+# new email/verification serverless functions live.
+[functions]
+  directory = "netlify/functions"

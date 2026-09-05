@@ -5,11 +5,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Mail, ArrowLeft, Loader2, User, Lock, KeyRound } from 'lucide-react';
 import AuthLayout from '@/components/AuthLayout';
-import { getAccountByUsername, pbkdf2, saveAccount, clearSession } from '@/lib/localAuth';
-import { forgotPasswordRemote, resetPasswordRemote } from '@/lib/cloudSync';
+import { getAccountByUsername, pbkdf2, saveAccount, clearSession, setLoggedIn } from '@/lib/localAuth';
+import { syncNow } from '@/lib/cloudSync';
+import { sendCode as sendCodeRemote, verifyCode } from '@/lib/localEmailAuth';
 
 // two-step recovery: username + email → 4-digit code (emailed) → new password.
 // the email must match the account's registered email before a code is sent.
+// Moved entirely off Base44 per explicit request, after confirming the
+// previous version accepted any 4-digit code as valid and wasn't reliably
+// sending mail. The email-match check and the actual password change both
+// now happen locally on this device (this device's own copy of the account,
+// written the last time it synced) — the code itself is generated, emailed,
+// and verified by real Netlify Functions using the Gmail app password.
 export default function ForgotPassword() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
@@ -20,28 +27,38 @@ export default function ForgotPassword() {
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [token, setToken] = useState('');
 
-  const sendCode = async (e) => {
+  const handleSendCode = async (e) => {
     e.preventDefault();
     setError('');
     const u = username.trim().toLowerCase();
+    const em = email.trim().toLowerCase();
     if (!u) { setError('enter your username'); return; }
-    if (!email.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) { setError('enter the email on your account'); return; }
-    if (!navigator.onLine) { setError('go online to reset your password'); return; }
+    if (!em || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { setError('enter the email on your account'); return; }
     setLoading(true);
     try {
-      const res = await forgotPasswordRemote(u, email.trim());
-      if (res && res.error) {
-        // map the raw backend error to the friendly, specifically-requested
-        // wording without proceeding or re-sending anything.
-        const friendly = res.error === 'email does not match this username' ? 'email incorrect' : res.error;
-        setError(friendly);
-        setLoading(false);
+      const local = getAccountByUsername(u);
+      if (!local) {
+        setError('this device doesn\'t have that account — sign in on this device first');
         return;
       }
+      if ((local.email || '').toLowerCase() !== em) {
+        // does not proceed and does not send anything — checked before any
+        // network call happens at all.
+        setError('email incorrect');
+        return;
+      }
+      if (!navigator.onLine) { setError('go online to reset your password'); return; }
+      const sent = await sendCodeRemote(em, 'reset');
+      if (sent && sent.error) { setError(sent.error); return; }
+      setToken(sent.token);
       setStep(2);
-    } catch (err) { setError((err && err.message) || 'failed to send code'); }
-    setLoading(false);
+    } catch (err) {
+      setError((err && err.message) || 'failed to send code');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const reset = async (e) => {
@@ -49,20 +66,33 @@ export default function ForgotPassword() {
     setError('');
     const u = username.trim().toLowerCase();
     if (!code.trim()) { setError('enter the 4-digit code'); return; }
+    if (!token) { setError('code expired — go back and resend'); return; }
     if (password.length < 4) { setError('password must be at least 4 characters'); return; }
     if (password !== confirm) { setError('passwords do not match'); return; }
     setLoading(true);
     try {
-      const res = await resetPasswordRemote(u, code.trim(), password);
-      if (res && res.error) { setError(res.error); setLoading(false); return; }
+      const res = await verifyCode(token, code.trim());
+      if (!res.valid) { setError(res.error === 'invalid or expired code' ? 'wrong or expired code' : (res.error || 'wrong or expired code')); return; }
       const local = getAccountByUsername(u);
-      if (local) {
-        const newHash = await pbkdf2(password, local.salt);
-        saveAccount({ ...local, hash: newHash, updated_date: Date.now() });
+      if (!local) { setError('account not found on this device'); return; }
+      const newHash = await pbkdf2(password, local.salt);
+      saveAccount({ ...local, hash: newHash, updated_date: Date.now() });
+      // best-effort push to the cloud so other devices eventually see the
+      // new password too — not required for this device to work correctly.
+      try {
+        setLoggedIn(u);
+        await syncNow();
+      } catch {
+        // fine if this fails — the local change above is what actually matters
+      } finally {
+        clearSession();
       }
-      clearSession();
       navigate('/login', { replace: true });
-    } catch (err) { setError((err && err.message) || 'reset failed'); setLoading(false); }
+    } catch (err) {
+      setError((err && err.message) || 'reset failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -74,7 +104,7 @@ export default function ForgotPassword() {
     >
       {error && <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm lowercase">{error}</div>}
       {step === 1 ? (
-        <form onSubmit={sendCode} className="space-y-4">
+        <form onSubmit={handleSendCode} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="username">username</Label>
             <div className="relative">
