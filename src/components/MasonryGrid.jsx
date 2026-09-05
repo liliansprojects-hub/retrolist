@@ -69,7 +69,7 @@ function packSkyline(items, containerW) {
   return placed;
 }
 
-export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMenu }) {
+export default function MasonryGrid({ folders, editMode, onResize, onReorder, onOpen, onMenu }) {
   const ref = useRef(null);
   const [width, setWidth] = useState(0);
   const dragRef = useRef(null);
@@ -78,6 +78,20 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
   const rerender = () => force((x) => x + 1);
   const onResizeRef = useRef(onResize);
   onResizeRef.current = onResize;
+  const onReorderRef = useRef(onReorder);
+  onReorderRef.current = onReorder;
+  // order changes while actively dragging are visual-only (this state) —
+  // NOT written to storage on every pointer move. previously every reorder
+  // tick called onResize() once per folder, each doing a full localStorage
+  // read+write plus a full-page refresh — dozens of times a second while
+  // dragging. that heavy synchronous work on every tick is what actually
+  // made drags feel snappy/janky and, worse, could cause pointer events to
+  // get processed against a stale folder list mid-drag. now the live order
+  // only lives here until the drag ends, and gets written to storage once.
+  const [liveOrder, setLiveOrder] = useState(null); // { [folderId]: order } | null
+  const liveOrderRef = useRef(liveOrder);
+  liveOrderRef.current = liveOrder;
+  const pendingCommitRef = useRef(null);
 
   useLayoutEffect(() => {
     if (!ref.current) return;
@@ -99,7 +113,8 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
     const defW = span === 2 ? Math.min(width, 2 * colW) : colW;
     const w = f.w != null ? Math.max(MIN_W, Math.min(width || defW, f.w)) : defW;
     const h = f.h != null ? f.h : (defW > 0 ? defW / aspect : 300);
-    return { id: f.id, w: Math.max(MIN_W, Math.min(MAX_W, w)), h: Math.max(MIN_H, Math.min(MAX_H, h)), order: f.order != null ? f.order : idx };
+    const order = (liveOrder && liveOrder[f.id] != null) ? liveOrder[f.id] : (f.order != null ? f.order : idx);
+    return { id: f.id, w: Math.max(MIN_W, Math.min(MAX_W, w)), h: Math.max(MIN_H, Math.min(MAX_H, h)), order };
   });
 
   const packItems = items.slice().sort((a, b) => a.order - b.order);
@@ -183,7 +198,10 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
       if (localY > maxBottom) target = null;
 
       const ids = all.map((f) => f.id);
-      const orders = all.map((f, i) => f.order != null ? f.order : i);
+      const orders = all.map((f, i) => {
+        const lo = liveOrderRef.current;
+        return (lo && lo[f.id] != null) ? lo[f.id] : (f.order != null ? f.order : i);
+      });
       const sorted = ids.map((id, i) => ({ id, o: orders[i] })).sort((a, b) => a.o - b.o).map((s) => s.id);
       const fromIdx = sorted.indexOf(d.id);
       if (fromIdx < 0) return;
@@ -214,7 +232,11 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
       const map = {};
       sorted.forEach((id, i) => { map[id] = i; });
       dragRef.current = { ...dragRef.current, lastInsert: insertAt };
-      all.forEach((f) => onResizeRef.current(f.id, { order: map[f.id] }));
+      // visual-only for the rest of the drag — see the liveOrder comment at
+      // the top of the component. persisted once, in onUp, when the drag
+      // actually ends.
+      pendingCommitRef.current = map;
+      setLiveOrder(map);
       return;
     }
     // resize: the dragged edge follows the pointer 1:1, no transition —
@@ -253,9 +275,19 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
       dragRef.current = { ...d, mode: 'settling' };
       extraHRef.current = 0;
       rerender();
+      // persist the final order exactly once here — not on every drag tick
+      // (see the liveOrder comment above) — then let the parent's refreshed
+      // `folders` prop take over once liveOrder is cleared below.
+      if (pendingCommitRef.current) {
+        const map = pendingCommitRef.current;
+        pendingCommitRef.current = null;
+        if (onReorderRef.current) onReorderRef.current(map);
+        else foldersRef.current.forEach((f) => { if (map[f.id] != null) onResizeRef.current(f.id, { order: map[f.id] }); });
+      }
       clearTimeout(settleTimeoutRef.current);
       settleTimeoutRef.current = setTimeout(() => {
         dragRef.current = null;
+        setLiveOrder(null);
         rerender();
       }, DURATION + 20);
       return;

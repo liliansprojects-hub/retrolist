@@ -54,6 +54,12 @@ async function resolveShortLink(url) {
   // all runs client-side regardless of where the frontend is deployed),
   // a second option gives this a real chance of still working.
   const proxies = [
+    // r.jina.ai renders the page (handles JS-based consent walls Google can
+    // throw at plain scraper requests) and returns clean text — tried
+    // first since it's the most likely to actually get real content back
+    // rather than a blank consent page.
+    (u) => `https://r.jina.ai/${u}`,
+    (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
     (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
     (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
   ];
@@ -64,11 +70,17 @@ async function resolveShortLink(url) {
       const coords = parseMapsUrl(finalUrl);
       if (coords && coords.lat) return coords;
       const text = await res.text();
-      // the old og:image regex here only ever had 1 capture group, so it
-      // could never actually satisfy the length check below — it silently
-      // never worked. Removed; this @lat,lng search is the one that
-      // actually finds coordinates embedded anywhere in the page's HTML.
-      const embedded = text.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || text.match(/"lat['"]?\s*:\s*(-?\d+\.\d+)[^}]*"lng['"]?\s*:\s*(-?\d+\.\d+)/);
+      // several patterns, tried in order of how reliably each shows up in
+      // scraped Google Maps HTML: the classic @lat,lng in a URL anywhere in
+      // the page, a raw lat/lng JSON pair, and Google's internal
+      // "!3d<lat>!4d<lng>" data-blob marker, which is present on almost
+      // every place page (including ones with no @lat,lng in the URL at
+      // all) since it's how Google encodes the pin's exact position
+      // internally.
+      const embedded =
+        text.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ||
+        text.match(/"lat['"]?\s*:\s*(-?\d+\.\d+)[^}]*"lng['"]?\s*:\s*(-?\d+\.\d+)/) ||
+        text.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
       if (embedded) return { lat: parseFloat(embedded[1]), lng: parseFloat(embedded[2]) };
       const fromFinal = parseMapsUrl(finalUrl);
       if (fromFinal && fromFinal.lat) return fromFinal;
@@ -97,6 +109,20 @@ async function resolveCoords({ url, address }) {
   }
   if (!coords && address) coords = await geocode(address);
   return coords;
+}
+
+// last-resort, 100%-reliable path: a "lat, lng" pair typed/pasted straight
+// from Google Maps (tap-and-hold a spot → the coordinates shown at the
+// bottom can be copied directly). doesn't depend on any link parsing,
+// third-party proxy, or geocoding service working at all.
+function parseManualCoords(str) {
+  if (!str) return null;
+  const m = String(str).trim().match(/^(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$/);
+  if (!m) return null;
+  const lat = parseFloat(m[1]);
+  const lng = parseFloat(m[2]);
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
 }
 
 function coloredIcon(color) {
@@ -298,16 +324,39 @@ export default function MapPage() {
 
   const handlePlaceSave = async (folderId, placeId, data) => {
     if (!folderId) return;
+    const manual = parseManualCoords(data.manualCoords);
     if (placeId) {
-      updatePlace(folderId, placeId, data);
+      let coords = manual;
+      if (!coords) {
+        // re-resolve whenever the link/address actually changed — editing
+        // an existing place used to just save the new text without ever
+        // trying to (re)find coordinates for it, so fixing a broken link on
+        // an already-saved place could never plot it, only saving fresh new
+        // places ever attempted resolution at all.
+        const existing = editingPlace?.place || {};
+        if ((data.url || '') !== (existing.url || '') || (data.address || '') !== (existing.address || '')) {
+          setResolving(true);
+          coords = await resolveCoords({ url: data.url, address: data.address });
+          setResolving(false);
+        }
+      }
+      updatePlace(folderId, placeId, {
+        name: data.name, subheading: data.subheading, address: data.address, url: data.url,
+        notes: data.notes, photo: data.photo, color: data.color,
+        ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
+      });
       setEditingPlace(null);
       refresh();
+      if (coords?.lat) setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
       return;
     }
     if (!data.name?.trim() && !data.url?.trim()) return;
-    setResolving(true);
-    const coords = await resolveCoords({ url: data.url, address: data.address });
-    setResolving(false);
+    let coords = manual;
+    if (!coords) {
+      setResolving(true);
+      coords = await resolveCoords({ url: data.url, address: data.address });
+      setResolving(false);
+    }
     const created = addPlace(folderId, {
       name: data.name.trim() || 'unnamed place',
       subheading: data.subheading?.trim() || '',
@@ -588,11 +637,12 @@ function PlaceEditor({ folderId, place, folders, onClose, onSave, onDelete }) {
   const [notes, setNotes] = useState(place?.notes || '');
   const [photo, setPhoto] = useState(place?.photo || null);
   const [color, setColor] = useState(place?.color || '');
+  const [manualCoords, setManualCoords] = useState(place?.lat != null ? `${place.lat}, ${place.lng}` : '');
 
   const save = () => onSave(
     isNew ? selFolder : folderId,
     isNew ? undefined : place.id,
-    { name: name.trim() || 'unnamed place', subheading: subheading.trim(), address: address.trim(), url: url.trim(), notes: notes.trim(), photo, color }
+    { name: name.trim() || 'unnamed place', subheading: subheading.trim(), address: address.trim(), url: url.trim(), notes: notes.trim(), photo, color, manualCoords: manualCoords.trim() }
   );
 
   return (
@@ -629,6 +679,20 @@ function PlaceEditor({ folderId, place, folders, onClose, onSave, onDelete }) {
             )}
           </div>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="notes" rows={3} className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground resize-none" />
+          <div>
+            <input
+              value={manualCoords}
+              onChange={(e) => setManualCoords(e.target.value)}
+              placeholder="lat, lng (optional)"
+              className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground"
+            />
+            <p className="text-[11px] text-muted-foreground mt-1 px-1 lowercase leading-snug">
+              only needed if the link above doesn't auto-plot: in google maps, tap and hold the spot — the coordinates shown at the bottom can be copied straight in here.
+            </p>
+            {!isNew && place?.lat == null && !manualCoords && (
+              <p className="text-[11px] text-destructive mt-1 px-1 lowercase">not plotted on the map yet</p>
+            )}
+          </div>
           <ColorPicker value={color} onChange={setColor} label="place colour" />
           <ImageUpload value={photo} onChange={setPhoto} label="photo" aspect={1} maxSize={800} className="h-28" />
         </div>

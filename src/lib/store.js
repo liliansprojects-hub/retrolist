@@ -86,6 +86,14 @@ export const updateFolder = (id, updates) => {
   const folders = getFolders().map((f) => (f.id === id ? { ...f, ...updates, updated_date: Date.now() } : f));
   saveFolders(folders);
 };
+// batch-update every folder's `order` in a single read+write — used for
+// drag-to-reorder commits, where calling updateFolder() once per folder
+// would mean one full localStorage read+write (and one parent refresh) per
+// folder, every time. reorderFolders does the whole thing in one pass.
+export const reorderFolders = (orderMap) => {
+  const folders = getFolders().map((f) => (orderMap[f.id] != null ? { ...f, order: orderMap[f.id], updated_date: Date.now() } : f));
+  saveFolders(folders);
+};
 export const deleteFolder = (id) => {
   logDelete('folder', id);
   saveFolders(getFolders().filter((f) => f.id !== id));

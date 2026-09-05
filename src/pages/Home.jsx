@@ -6,7 +6,7 @@ import {
   LayoutGrid, ChevronRight, ChevronDown, Folder, FolderPlus, FolderInput, Copy, Images, Search, Pin, ArrowDownUp, X,
 } from 'lucide-react';
 import {
-  getFolders, getRootFolders, addFolder, updateFolder, deleteFolder, moveFolder, copyFolder,
+  getFolders, getRootFolders, addFolder, updateFolder, reorderFolders, deleteFolder, moveFolder, copyFolder,
   addItem, updateItem, deleteItem,
   getProfile, addEvent, addAlarm, getSettings, saveSettings, LIST_TYPES,
 } from '@/lib/store';
@@ -330,6 +330,7 @@ export default function Home() {
               folders={visibleFolders}
               editMode={editMode}
               onResize={(id, data) => { updateFolder(id, data); refresh(); }}
+              onReorder={(orderMap) => { reorderFolders(orderMap); refresh(); }}
               onOpen={(id) => {
                 const f = folders.find((x) => x.id === id);
                 if (!f) return;

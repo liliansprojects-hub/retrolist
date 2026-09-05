@@ -53,9 +53,16 @@ export default function ItemRow({ item, folderType, onUpdate, onOpen }) {
   }
   if (kind === 'saving' && item.amount) meta.push('£' + item.amount);
 
+  // "short" needs to read as clearly shorter regardless of what content the
+  // row happens to have (a subheading/meta line can otherwise make both
+  // options size out to nearly the same height, since a min-height only
+  // wins when it's taller than the content itself). widening the gap here
+  // and cutting the meta/media line's own vertical footprint in "short"
+  // mode makes the two options unmistakably different sizes in every case,
+  // not just for a single bare line of text.
   const short = item.itemHeight === 'short';
-  const padY = short ? 'py-1.5' : 'py-3';
-  const minH = short ? 'min-h-[29px]' : 'min-h-[58px]';
+  const padY = short ? 'py-1' : 'py-4';
+  const minH = short ? 'min-h-[34px]' : 'min-h-[72px]';
 
   const bg = isFull ? { backgroundColor: item.color + 'D9' } : undefined;
 
@@ -87,7 +94,7 @@ export default function ItemRow({ item, folderType, onUpdate, onOpen }) {
         )}
         <div className="flex-1 min-w-0 flex flex-col justify-center leading-tight">
           <input value={item.text || ''} onChange={(e) => onUpdate(item.id, { text: e.target.value })} placeholder="type something..." className={textClass} />
-          {(meta.length > 0 || mediaCount > 0) && (
+          {!short && (meta.length > 0 || mediaCount > 0) && (
             <div className={cn('flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0 text-[11px] lowercase', isFull ? '' : 'text-muted-foreground')}>
               {meta.map((m, i) => (
                 <span key={i} className="whitespace-nowrap">{m}{i < meta.length - 1 ? ' ·' : ''}</span>
