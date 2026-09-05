@@ -15,6 +15,11 @@ const MIN_W = 120;
 const MAX_W = 1000;
 const MIN_H = 90;
 const MAX_H = 760;
+// "emphasized decelerate" easing — glides to a stop instead of the linear/
+// ease curves that read as a snap. used for every auto-shift and the
+// drop-settle animation.
+const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
+const DURATION = 260; // ms
 
 function parseRatio(r) {
   if (!r) return 3 / 4;
@@ -118,18 +123,23 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
   folders.forEach((fl) => { foldersById[fl.id] = fl; });
   const foldersRef = useRef(folders); foldersRef.current = folders;
 
+  const settleTimeoutRef = useRef(null);
+
   const onMove = useCallback((e) => {
     const d = dragRef.current;
-    if (!d) return;
+    if (!d || d.mode === 'settling') return;
     const rect = ref.current.getBoundingClientRect();
     const localX = e.clientX - rect.left;
     const localY = e.clientY - rect.top;
     if (d.mode === 'move') {
-      // the held block follows the finger (delta transform) while others auto-shift
-      // (insert-and-shift reorder). on release the block settles into its new
-      // slot. lastInsert avoids jitter on repeated moves. pointer coords are
-      // converted to the grid's own space so hover/insert detection matches the
-      // packed layout (no viewport-offset drift, no blocks vanishing).
+      // the held block follows the pointer 1:1 from its captured drag-start
+      // position (originX/originY, set once in onBodyDown) — NOT from its
+      // live packed slot, which changes every time the order below causes a
+      // reflow. tracking the live slot was the reason the dragged block
+      // itself used to jump around mid-drag instead of gliding smoothly:
+      // every reorder shifted its "base" position out from under the
+      // pointer offset. other (non-dragged) blocks still animate into their
+      // new slots via the transition set at render time.
       const dx = e.clientX - d.startX;
       const dy = e.clientY - d.startY;
       dragRef.current = { ...d, lastX: e.clientX, lastY: e.clientY, dx, dy };
@@ -145,24 +155,32 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
 
       if (!others.length) return;
 
-      // nearest-block targeting instead of strict "must be directly over a
-      // block's rectangle" — that was the actual gap: dragging into a
-      // margin, a column gutter, or the empty space beside the last block
-      // in a row (before the wall) found nothing and did nothing. Distance
-      // to each block's center always finds a reasonable target, so
-      // reordering now works from any drop point, not just on top of
-      // another block.
-      let nearest = others[0];
-      let bestDist = Infinity;
+      // hit-test the block whose rect the pointer is actually inside first.
+      // this is the fix for reordering only ever working right-to-left:
+      // picking whichever block's *center* was nearest broke down as soon
+      // as blocks had different sizes, since a wide block's center can sit
+      // far from a pointer that's still plainly hovering over it — a
+      // smaller, closer-centered neighbour kept winning instead, so hovering
+      // rightward onto a wide block never actually targeted it. falling
+      // back to nearest-center only when the pointer isn't over any block
+      // (i.e. it's in a gap/margin) keeps "drop in the gap between two
+      // blocks" working too.
+      let target = null;
       for (const p of others) {
-        const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
-        const dist = Math.hypot(localX - cx, localY - cy);
-        if (dist < bestDist) { bestDist = dist; nearest = p; }
+        if (localX >= p.x && localX <= p.x + p.w && localY >= p.y && localY <= p.y + p.h) { target = p; break; }
+      }
+      if (!target) {
+        let bestDist = Infinity;
+        for (const p of others) {
+          const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+          const dist = Math.hypot(localX - cx, localY - cy);
+          if (dist < bestDist) { bestDist = dist; target = p; }
+        }
       }
       // below everything: always goes to the very end, regardless of which
-      // block happens to be nearest by raw distance — this is what makes
-      // "slide down to fit below the last block" work reliably.
-      const target = localY > maxBottom ? null : nearest;
+      // block happens to be nearest — this is what makes "slide down to fit
+      // below the last block" work reliably.
+      if (localY > maxBottom) target = null;
 
       const ids = all.map((f) => f.id);
       const orders = all.map((f, i) => f.order != null ? f.order : i);
@@ -174,19 +192,17 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
       if (target === null) {
         insertAt = sorted.length; // one-past-the-end — "after the last element", not "at" it
       } else {
-        // whichever axis the drag point is predominantly offset from the
-        // target's center along decides before/after — this replaces a
-        // fixed-tolerance "are we in the same row" guess, which could
-        // misfire between blocks of different heights (a tall dragged block
-        // vs a short target, or vice versa) and silently pick the wrong axis,
-        // which is exactly what would make left-right dragging or
-        // between-two-blocks insertion fail to register correctly while
-        // top-down happened to still work (or vice versa).
-        const targetCx = target.x + target.w / 2;
-        const targetCy = target.y + target.h / 2;
-        const offX = localX - targetCx;
-        const offY = localY - targetCy;
-        const before = Math.abs(offX) > Math.abs(offY) ? offX < 0 : offY < 0;
+        // crossing the midpoint of the target block (horizontally when
+        // roughly in its row — supports left-to-right AND right-to-left
+        // equally since it's a plain x-comparison; vertically otherwise —
+        // supports top-to-bottom AND bottom-to-top, triggering exactly at
+        // the 50% mark) is what decides before/after. diagonal drags are
+        // just whichever axis currently applies, so hovering any direction,
+        // including diagonally, onto any block works the same way.
+        const sameRow = localY > target.y - target.h * 0.15 && localY < target.y + target.h * 1.15;
+        const before = sameRow
+          ? localX < target.x + target.w / 2
+          : localY < target.y + target.h / 2;
         insertAt = sorted.indexOf(target.id);
         if (!before) insertAt += 1;
       }
@@ -201,6 +217,8 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
       all.forEach((f) => onResizeRef.current(f.id, { order: map[f.id] }));
       return;
     }
+    // resize: the dragged edge follows the pointer 1:1, no transition —
+    // direct manual feedback, unrelated to the reorder/settle animation.
     const dx = e.clientX - d.startX;
     const dy = e.clientY - d.startY;
     let nw = d.startW;
@@ -217,27 +235,60 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
 
   const onUp = useCallback(() => {
     const d = dragRef.current;
-    if (d && d.mode === 'resize') onResizeRef.current(d.id, { w: d.w, h: d.h });
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    if (d && d.mode === 'resize') {
+      onResizeRef.current(d.id, { w: d.w, h: d.h });
+      dragRef.current = null;
+      extraHRef.current = 0;
+      rerender();
+      return;
+    }
+    if (d && d.mode === 'move') {
+      // don't snap the instant the pointer lifts — that hard cut (dragged
+      // block's pointer-follow offset vanishing at the exact same moment
+      // its slot could also be changing) is what made every drop feel like
+      // a snap. instead animate from wherever the pointer left it into the
+      // final packed slot, then clear drag state once that settle finishes.
+      dragRef.current = { ...d, mode: 'settling' };
+      extraHRef.current = 0;
+      rerender();
+      clearTimeout(settleTimeoutRef.current);
+      settleTimeoutRef.current = setTimeout(() => {
+        dragRef.current = null;
+        rerender();
+      }, DURATION + 20);
+      return;
+    }
     dragRef.current = null;
     extraHRef.current = 0;
     rerender();
+  }, [onMove]);
+
+  useEffect(() => () => {
+    clearTimeout(settleTimeoutRef.current);
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
-  }, [onMove]);
+  }, [onMove, onUp]);
 
   const onHandleDown = (e, edge, f, cardW, cardH) => {
     e.stopPropagation();
     e.preventDefault();
+    clearTimeout(settleTimeoutRef.current);
     dragRef.current = { id: f.id, mode: 'resize', edge, startX: e.clientX, startY: e.clientY, startW: cardW, startH: cardH, w: cardW, h: cardH };
     rerender();
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
   };
 
-  const onBodyDown = (e, f) => {
+  const onBodyDown = (e, f, p) => {
     e.stopPropagation();
     e.preventDefault();
-    dragRef.current = { id: f.id, mode: 'move', startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY };
+    clearTimeout(settleTimeoutRef.current);
+    // capture this block's current on-screen slot once, at drag-start — the
+    // dragged block tracks the pointer from this fixed origin for the whole
+    // drag (see onMove), instead of from its live packed slot.
+    dragRef.current = { id: f.id, mode: 'move', startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY, dx: 0, dy: 0, originX: p.x, originY: p.y };
     rerender();
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
@@ -260,15 +311,18 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
       {placedM.map((p, i) => {
         const f = packItems[i];
         const full = foldersById[f.id] || f;
-        const isDraggingThis = dragRef.current && dragRef.current.id === f.id;
-        const isResizingThis = isDraggingThis && dragRef.current.mode === 'resize';
+        const d = dragRef.current;
+        const isDraggingThis = !!d && d.id === f.id && d.mode === 'move';
+        const isSettlingThis = !!d && d.id === f.id && d.mode === 'settling';
+        const isResizingThis = !!d && d.id === f.id && d.mode === 'resize';
+
         // during resize, size the box from the live drag values directly —
         // not the packer's in-progress recomputed position, which re-runs on
         // every pixel of a resize and can momentarily collapse this item's
         // box, making the card vanish while the (independently positioned)
         // arrow handles stay put.
-        const boxW = isResizingThis ? dragRef.current.w : p.w;
-        const boxH = isResizingThis ? dragRef.current.h : p.h;
+        const boxW = isResizingThis ? d.w : p.w;
+        const boxH = isResizingThis ? d.h : p.h;
         // resizing via the left/top edge grows width/height from a fixed
         // top-left anchor by default, which means the box only ever expands
         // to the right/down regardless of which edge you drag — so pulling
@@ -277,11 +331,42 @@ export default function MasonryGrid({ folders, editMode, onResize, onOpen, onMen
         // the size delta keeps the *opposite* edge fixed and lets the
         // dragged edge actually follow the pointer, both directions, on
         // every edge.
-        const boxX = isResizingThis && dragRef.current.edge === 'left' ? p.x - (boxW - dragRef.current.startW) : p.x;
-        const boxY = isResizingThis && dragRef.current.edge === 'top' ? p.y - (boxH - dragRef.current.startH) : p.y;
+        const boxX = isResizingThis && d.edge === 'left' ? p.x - (boxW - d.startW) : p.x;
+        const boxY = isResizingThis && d.edge === 'top' ? p.y - (boxH - d.startH) : p.y;
+
+        // positioning: every card sits at (0,0) with its real position
+        // applied via transform — this lets us animate a single `transform`
+        // property consistently for both auto-shifts (other cards) and the
+        // drop-settle (this card), instead of mixing transform (drag) with
+        // left/top (layout) which is what caused the visible snap at the
+        // moment a drag ended.
+        let renderX = boxX, renderY = boxY, transition;
+        if (isDraggingThis) {
+          // pure 1:1 pointer tracking from the captured drag-start slot.
+          renderX = d.originX + (d.dx || 0);
+          renderY = d.originY + (d.dy || 0);
+          transition = 'none';
+        } else if (isResizingThis) {
+          transition = 'none'; // direct manual feedback while actively resizing
+        } else if (isSettlingThis) {
+          transition = `transform ${DURATION}ms ${EASE}`; // glide from drop point into its slot
+        } else {
+          transition = `transform ${DURATION}ms ${EASE}, width ${DURATION}ms ${EASE}, height ${DURATION}ms ${EASE}`;
+        }
+
         return (
-          <div key={f.id} className={`absolute ${isDraggingThis ? 'shadow-2xl' : ''}`} style={{ left: boxX, top: boxY, width: boxW, height: boxH, zIndex: isDraggingThis ? 30 : undefined, transform: isDraggingThis && dragRef.current.mode === 'move' ? `translate(${dragRef.current.dx || 0}px, ${dragRef.current.dy || 0}px)` : undefined, transition: isDraggingThis ? 'none' : 'left 0.18s ease, top 0.18s ease, width 0.18s ease, height 0.18s ease' }}>
-            <div onPointerDown={editMode ? (e) => onBodyDown(e, f) : undefined} className={editMode ? 'w-full h-full cursor-move' : 'w-full h-full'} style={{ touchAction: editMode ? 'none' : undefined }}>
+          <div
+            key={f.id}
+            className={`absolute top-0 left-0 ${isDraggingThis || isSettlingThis ? 'shadow-2xl' : ''}`}
+            style={{
+              width: boxW,
+              height: boxH,
+              zIndex: isDraggingThis ? 30 : isSettlingThis ? 25 : undefined,
+              transform: `translate(${renderX}px, ${renderY}px)`,
+              transition,
+            }}
+          >
+            <div onPointerDown={editMode ? (e) => onBodyDown(e, f, p) : undefined} className={editMode ? 'w-full h-full cursor-move' : 'w-full h-full'} style={{ touchAction: editMode ? 'none' : undefined }}>
               {full.isItemBlock ? (
                 <ItemBlock folder={full} onClick={editMode ? undefined : () => onOpen(f.id)} onMenu={editMode ? undefined : () => onMenu(full)} />
               ) : (

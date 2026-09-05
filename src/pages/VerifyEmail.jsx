@@ -5,22 +5,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Mail, Loader2 } from 'lucide-react';
 import AuthLayout from '@/components/AuthLayout';
-import { verifyCode, sendCode } from '@/lib/localEmailAuth';
+import { requestCode, verifyCode } from '@/lib/emailAuth';
 import { setLoggedIn, saveAccount, getAccountByUsername, isLoggedIn } from '@/lib/localAuth';
 import { useLocalAuth } from '@/lib/LocalAuthContext';
 
 // email confirmation step shown after a correct password on login (only when
-// the user entered an email). The code is now generated, emailed, and
-// verified entirely by real Netlify Functions (not Base44) — see
-// netlify/functions/send-code.js and verify-code.js — after confirming the
-// previous Base44-based version accepted any 4-digit code as valid.
+// the user entered an email). the code was emailed by confirmEmail; verifying
+// it here completes the sign-in and lands on the main page.
 export default function VerifyEmail() {
   const navigate = useNavigate();
   const location = useLocation();
   const { refresh } = useLocalAuth();
   const state = location.state || {};
   const { username, email, salt, hash, isLocal } = state;
-  const [token, setToken] = useState(state.token || '');
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -49,11 +46,10 @@ export default function VerifyEmail() {
     e.preventDefault();
     setError('');
     if (!code.trim()) { setError('enter the code'); return; }
-    if (!token) { setError('code expired — tap resend'); return; }
     setLoading(true);
     try {
-      const res = await verifyCode(token, code.trim());
-      if (!res.valid) { setError(res.error === 'invalid or expired code' ? 'wrong or expired code' : (res.error || 'wrong or expired code')); return; }
+      const res = verifyCode('confirm', username, email, code.trim());
+      if (res && res.error) { setError(res.error === 'invalid or expired code' ? 'wrong or expired code' : res.error); return; }
       finishLogin();
     } catch (err) {
       setError((err && err.message) || 'verification failed');
@@ -66,9 +62,8 @@ export default function VerifyEmail() {
     setError('');
     setResending(true);
     try {
-      const res = await sendCode(email, 'confirm');
-      if (res && res.error) { setError(res.error); return; }
-      setToken(res.token); // the old token is now invalid — this replaces it
+      const res = await requestCode('confirm', username, email);
+      if (res && res.error) setError(res.error);
     } finally {
       setResending(false);
     }

@@ -39,20 +39,10 @@ async function geocode(address) {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`
     );
-    if (!res.ok) {
-      // this was silently swallowed before — if Nominatim is rate-limiting
-      // or rejecting requests from this domain (their usage policy
-      // discourages heavy automated use without an identifying header,
-      // which a browser's fetch() can't set anyway), this is exactly what
-      // would produce "places never get coordinates, no error ever shows".
-      console.warn('[map] nominatim request failed:', res.status, res.statusText);
-      return null;
-    }
     const data = await res.json();
     if (data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-    console.log('[map] nominatim returned no results for:', address);
-  } catch (err) {
-    console.warn('[map] nominatim request threw:', err);
+  } catch {
+    /* offline — store without coords */
   }
   return null;
 }
@@ -93,11 +83,8 @@ async function resolveCoords({ url, address }) {
   let coords = null;
   if (url) {
     const parsed = parseMapsUrl(url);
-    if (parsed?.lat) { coords = parsed; console.log('[map] resolved from URL directly:', coords); }
-    else if (parsed?.placeName) {
-      coords = await geocode(parsed.placeName);
-      console.log('[map] geocode by place name', parsed.placeName, '->', coords);
-    }
+    if (parsed?.lat) coords = parsed;
+    else if (parsed?.placeName) coords = await geocode(parsed.placeName);
     // fall back to actually fetching the real Google Maps page and scraping
     // its embedded coordinates — not just for goo.gl/maps.app short links,
     // but for ANY maps URL once a plain Nominatim name search comes up
@@ -106,16 +93,9 @@ async function resolveCoords({ url, address }) {
     // name coverage is much weaker than Google's — searching by bare name
     // frequently fails for real places, while the actual page HTML almost
     // always has the true coordinates embedded somewhere.
-    if (!coords) {
-      coords = await resolveShortLink(url);
-      console.log('[map] fallback page-scrape ->', coords);
-    }
+    if (!coords) coords = await resolveShortLink(url);
   }
-  if (!coords && address) {
-    coords = await geocode(address);
-    console.log('[map] geocode by address', address, '->', coords);
-  }
-  if (!coords) console.warn('[map] could not resolve any coordinates for', { url, address }, '— see the steps logged above for which method was tried and what it returned');
+  if (!coords && address) coords = await geocode(address);
   return coords;
 }
 
@@ -130,12 +110,33 @@ function coloredIcon(color) {
 
 const folderColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 
+// keeps Leaflet's internal size/tile-grid in sync with the actual DOM box.
+// the map container's height animates (h-36 <-> h-64, see the wrapping div
+// below) whenever a place is opened/closed for editing, and Leaflet has no
+// way to know that happened — it only recalculates on window resize by
+// default. left alone, that meant the tile grid could end up misaligned or
+// simply blank after the very first edit-place interaction.
+function SyncSize() {
+  const map = useMap();
+  useEffect(() => {
+    const el = map.getContainer();
+    const invalidate = () => map.invalidateSize();
+    // fires once for the initial layout too, in case the container wasn't
+    // done sizing yet at the exact moment Leaflet first measured it
+    const ro = new ResizeObserver(() => invalidate());
+    ro.observe(el);
+    const t = setTimeout(invalidate, 350); // after the height CSS transition settles
+    return () => { ro.disconnect(); clearTimeout(t); };
+  }, [map]);
+  return null;
+}
+
 // flies the map to a target place whenever it changes
 function FlyTo({ target }) {
   const map = useMap();
   useEffect(() => {
     if (target && target.lat) {
-      map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), 14), { duration: 0.8 });
+      map.flyTo([target.lat, target.lng], Math.max(map.getZoom() || 14, 14), { duration: 0.8 });
     }
   }, [target]);
   return null;
@@ -165,7 +166,7 @@ function clusterIcon(count) {
 // to match its folder. tap any pin to open its contents.
 function MarkerLayer({ places }) {
   const map = useMap();
-  const [zoom, setZoom] = useState(map.getZoom());
+  const [zoom, setZoom] = useState(map.getZoom() || 2);
   useMapEvents({
     zoomend: () => setZoom(map.getZoom()),
     moveend: () => setZoom(map.getZoom()),
@@ -282,18 +283,6 @@ export default function MapPage() {
 
   const showAll = () => { setActiveFolders(null); setFilterSignal((s) => s + 1); };
 
-  const [retryingId, setRetryingId] = useState(null);
-  const retryResolve = async (folder, place) => {
-    if (!navigator.onLine) return;
-    setRetryingId(place.id);
-    const coords = await resolveCoords({ url: place.url, address: place.address });
-    setRetryingId(null);
-    if (coords?.lat) {
-      updatePlace(folder.id, place.id, { lat: coords.lat, lng: coords.lng });
-      refresh();
-    }
-  };
-
   const handleAddFolder = () => {
     if (!newFolderName.trim()) return;
     const f = addMapFolder({ name: newFolderName.trim(), color: newFolderColor, subtitle: newFolderSubtitle.trim() });
@@ -376,8 +365,20 @@ export default function MapPage() {
           (network hiccup, etc.) meant no map showed at all, just an empty
           placeholder, which read as "the map doesn't work". */}
       <div className={`rounded-2xl overflow-hidden mb-4 transition-all duration-300 ${editingPlace ? 'h-36' : 'h-64'}`}>
-        <MapContainer center={center} zoom={mappedPlaces.length ? undefined : 2} className="w-full h-full" style={{ borderRadius: '1rem' }}>
+        {/* zoom is now always a real number (was `mappedPlaces.length ?
+            undefined : 2`) — MapContainer's center/zoom props only apply
+            once, at construction, and Leaflet's L.Map never calls its
+            initial setView() at all when zoom is undefined. that's the
+            actual "blank map" bug: as soon as one place had resolved
+            coordinates, the map lost its only defined initial view and
+            never rendered a single tile (or pin) until something else
+            explicitly called setView/fitBounds/flyTo — which, on a fresh
+            page load with places already saved, could be never. FitBounds
+            below still takes over immediately after mount to frame the
+            real pins; this zoom value is only the safe starting point. */}
+        <MapContainer center={center} zoom={2} className="w-full h-full" style={{ borderRadius: '1rem' }}>
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; openstreetmap" />
+          <SyncSize />
           <FlyTo target={flyTarget} />
           <FitBounds places={mappedPlaces} signal={filterSignal} />
           <MarkerLayer places={mappedPlaces} />
@@ -466,18 +467,6 @@ export default function MapPage() {
                         <p className="text-sm font-medium lowercase truncate">{p.name}</p>
                         {p.subheading && <p className="text-xs text-muted-foreground lowercase truncate">{p.subheading}</p>}
                         {p.notes ? <p className="text-xs text-muted-foreground truncate">{p.notes}</p> : (p.address ? <p className="text-xs text-muted-foreground/70 truncate">{p.address}</p> : null)}
-                        {!p.lat && (p.url || p.address) && (
-                          <p className="text-xs text-destructive lowercase flex items-center gap-1 mt-0.5">
-                            location not found
-                            <button
-                              onClick={(e) => { e.stopPropagation(); retryResolve(folder, p); }}
-                              className="touch-44 underline"
-                              disabled={retryingId === p.id}
-                            >
-                              {retryingId === p.id ? 'retrying…' : 'retry'}
-                            </button>
-                          </p>
-                        )}
                       </div>
                       <button
                         onClick={() => { setEditingPlace({ folderId: folder.id, place: p }); }}

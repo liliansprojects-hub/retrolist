@@ -142,3 +142,14 @@
   font-family: var(--font-body);
   border-radius: 1.25rem;
 }
+/* defensive: Tailwind's preflight sets `img { max-width: 100%; height:
+   auto; }`, which — depending on Leaflet's exact version/build — can
+   collide with the tile <img> elements it lays out by explicit pixel
+   geometry, shrinking or hiding them so the map renders blank even though
+   requests for tiles are going out fine. Leaflet's own CSS already tries
+   to guard against this, but pinning it here too costs nothing and removes
+   this class of bug entirely regardless of package version. */
+.leaflet-container img {
+  max-width: none !important;
+  max-height: none !important;
+}

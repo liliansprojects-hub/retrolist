@@ -7,7 +7,7 @@ import { UserPlus, User, Lock, Mail, Loader2, CheckCircle2, XCircle } from 'luci
 import AuthLayout from '@/components/AuthLayout';
 import { registerLocal, getAccountByUsername, isLoggedIn, setLoggedIn, clearSession, saveAccount } from '@/lib/localAuth';
 import { accountLookupRemote, syncNow } from '@/lib/cloudSync';
-import { sendCode } from '@/lib/localEmailAuth';
+import { requestCode } from '@/lib/emailAuth';
 import { useLocalAuth } from '@/lib/LocalAuthContext';
 
 export default function Register() {
@@ -80,13 +80,12 @@ export default function Register() {
         setLoggedIn(u); // temp session so sync can push the account to the cloud
         await syncNow();
         clearSession();
-        // code generation + email sending now goes through a real Netlify
-        // Function using the Gmail app password directly — not Base44 —
-        // after confirming Base44's version accepted any code as valid and
-        // wasn't reliably delivering mail.
-        const sent = await sendCode(em, 'confirm');
-        if (sent && sent.error) { setError(sent.error); return; }
-        navigate('/verify-email', { replace: true, state: { username: u, email: em, isLocal: true, token: sent.token } });
+        const sent = await requestCode('confirm', u, em);
+        if (sent && sent.error) {
+          setError(sent.error);
+          return;
+        }
+        navigate('/verify-email', { replace: true, state: { username: u, email: em, isLocal: true } });
         return;
       }
       await registerLocal(u, password, email);

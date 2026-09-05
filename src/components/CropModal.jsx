@@ -79,12 +79,26 @@ export default function CropModal({ imageSrc, aspect = 1, round = false, maxSize
     return { x: Math.min(maxX, Math.max(minX, x)), y: Math.min(maxY, Math.max(minY, y)) };
   }, [frame]);
 
-  // keep the picture filling the frame whenever size/scale changes
+  // keep the picture filling the frame whenever size/scale changes. the
+  // very first time an image becomes ready, start it CENTRED in the frame
+  // instead of pinned to (0,0) — clamping a fresh {x:0,y:0} against a cover
+  // fit pins the image to its top-left corner, so any photo whose own
+  // shape didn't already match the target frame (e.g. a tall portrait
+  // photo going into a wide block) opened already cropped to its very top
+  // edge. every later shift still goes through drag/pinch/slider's own
+  // math, which already targets wherever the pointer is — this only fixes
+  // the untouched starting position.
+  const initedForRef = useRef(null);
   useEffect(() => {
     if (!natural.w || !frame.w) return;
     const ds = fitScale * scale;
+    if (initedForRef.current !== imageSrc) {
+      initedForRef.current = imageSrc;
+      setPos(clamp((frame.w - natural.w * ds) / 2, (frame.h - natural.h * ds) / 2, natural.w * ds, natural.h * ds));
+      return;
+    }
     setPos((p) => clamp(p.x, p.y, natural.w * ds, natural.h * ds));
-  }, [natural, frame, scale, fitScale, clamp]);
+  }, [natural, frame, scale, fitScale, clamp, imageSrc]);
 
   const localMid = () => {
     const rect = frameRef.current.getBoundingClientRect();

@@ -55,67 +55,13 @@ export async function deleteAccountRemote(username, authHash) {
   }
 }
 
-// verify the email matches the account, then email a 4-digit reset code
-export async function forgotPasswordRemote(username, email) {
-  try {
-    const res = await db.functions.invoke('forgotPassword', {
-      username: username.trim().toLowerCase(),
-      email: (email || '').trim().toLowerCase(),
-    });
-    return (res && res.data) ? res.data : res;
-  } catch (e) {
-    const d = (e && e.response && e.response.data) || (e && e.data);
-    if (d) return d;
-    return { error: (e && e.message) || 'failed to send code' };
-  }
-}
-
-// send a 4-digit confirmation code to a proposed email
-export async function confirmEmailRemote(username, email) {
-  try {
-    const res = await db.functions.invoke('confirmEmail', {
-      username: username.trim().toLowerCase(),
-      email: (email || '').trim().toLowerCase(),
-    });
-    return (res && res.data) ? res.data : res;
-  } catch (e) {
-    const d = (e && e.response && e.response.data) || (e && e.data);
-    if (d) return d;
-    return { error: (e && e.message) || 'failed to send code' };
-  }
-}
-
-// verify the confirmation code and mark the email confirmed
-export async function verifyEmailRemote(username, email, code) {
-  try {
-    const res = await db.functions.invoke('verifyEmail', {
-      username: username.trim().toLowerCase(),
-      email: (email || '').trim().toLowerCase(),
-      code,
-    });
-    return (res && res.data) ? res.data : res;
-  } catch (e) {
-    const d = (e && e.response && e.response.data) || (e && e.data);
-    if (d) return d;
-    return { error: (e && e.message) || 'verification failed' };
-  }
-}
-
-// verify the code + set a new password (cloud hash updated server-side)
-export async function resetPasswordRemote(username, code, newPassword) {
-  try {
-    const res = await db.functions.invoke('resetPassword', {
-      username: username.trim().toLowerCase(),
-      code,
-      newPassword,
-    });
-    return (res && res.data) ? res.data : res;
-  } catch (e) {
-    const d = (e && e.response && e.response.data) || (e && e.data);
-    if (d) return d;
-    return { error: (e && e.message) || 'reset failed' };
-  }
-}
+// NOTE: the email confirm/verify/forgot-password/reset flows used to live
+// here as Base44 function-invoke wrappers (forgotPasswordRemote,
+// confirmEmailRemote, verifyEmailRemote, resetPasswordRemote). they've been
+// replaced by src/lib/emailAuth.js, which runs entirely client-side (no
+// backend function deployment required) — see that file for why. Update
+// any new callers to use requestCode()/verifyCode() from '@/lib/emailAuth'
+// instead of re-adding these.
 
 // ── collect all local records (incl. the account record) for a push ──
 

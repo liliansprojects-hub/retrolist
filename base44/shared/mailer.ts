@@ -1,3 +1,8 @@
+// NOTE: superseded — the frontend no longer calls this. Email verification
+// and password reset now run client-side via src/lib/emailAuth.js (see
+// EMAIL_SETUP.md). Kept here only for reference / in case Base44 functions
+// are wired back up later.
+
 import nodemailer from 'npm:nodemailer@6.9.14';
 import { secrets } from 'base44:runtime';
 
