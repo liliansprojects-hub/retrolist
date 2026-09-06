@@ -1,14 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import { Map as PigeonMap, Overlay } from 'pigeon-maps';
 import { Plus, X, FolderPlus, ChevronDown, ChevronRight, ChevronLeft, Trash2, MapPin, Link2, Pencil, MoreVertical } from 'lucide-react';
 import {
   getMapFolders, saveMapFolders, addMapFolder, deleteMapFolder, updateMapFolder, addPlace, deletePlace, updatePlace,
 } from '@/lib/store';
 import ImageUpload from '@/components/ImageUpload';
 import ColorPicker from '@/components/ColorPicker';
+
+// NOTE ON THE MAP LIBRARY: this used to be react-leaflet. Leaflet's own
+// layout model depends entirely on a big external stylesheet
+// (leaflet.css) to give its tile/pane DOM the right position/overflow
+// rules — if that stylesheet doesn't actually apply for any reason (a
+// bundler quirk, a CSP, a build target that drops it), NOTHING renders and
+// there's no error, just a permanently blank box, which is exactly what
+// kept happening here even after fixing the zoom/sizing bugs underneath
+// it. pigeon-maps needs no external stylesheet at all — it lays itself out
+// with plain inline styles it sets itself — which removes that entire
+// failure mode outright. It's also a much smaller, dependency-free
+// library, so this is a straight simplification, not just a swap.
 
 // returns { lat, lng } if coords found, { placeName } if a place name is extractable, else null
 function parseMapsUrl(url) {
@@ -125,78 +135,59 @@ function parseManualCoords(str) {
   return { lat, lng };
 }
 
-function coloredIcon(color) {
-  return L.divIcon({
-    className: '',
-    html: `<div style="width:18px;height:18px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${color || '#0a0a0a'};border:2.5px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3)"></div>`,
-    iconSize: [18, 18],
-    iconAnchor: [9, 18],
-  });
-}
-
 const folderColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 
-// keeps Leaflet's internal size/tile-grid in sync with the actual DOM box.
-// the map container's height animates (h-36 <-> h-64, see the wrapping div
-// below) whenever a place is opened/closed for editing, and Leaflet has no
-// way to know that happened — it only recalculates on window resize by
-// default. left alone, that meant the tile grid could end up misaligned or
-// simply blank after the very first edit-place interaction.
-function SyncSize() {
-  const map = useMap();
-  useEffect(() => {
-    const el = map.getContainer();
-    const invalidate = () => map.invalidateSize();
-    // fires once for the initial layout too, in case the container wasn't
-    // done sizing yet at the exact moment Leaflet first measured it
-    const ro = new ResizeObserver(() => invalidate());
-    ro.observe(el);
-    const t = setTimeout(invalidate, 350); // after the height CSS transition settles
-    return () => { ro.disconnect(); clearTimeout(t); };
-  }, [map]);
-  return null;
+// standard web-mercator projection, used only to compute a center+zoom that
+// fits a set of points — pigeon-maps doesn't ship a fitBounds helper, so
+// this is a small, dependency-free version of the same math every map
+// library uses internally for it.
+function project([lat, lng]) {
+  const sinLat = Math.sin((lat * Math.PI) / 180);
+  const x = lng / 360 + 0.5;
+  const y = 0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI);
+  return [x, y];
+}
+function unproject([x, y]) {
+  const lng = (x - 0.5) * 360;
+  const n = Math.PI - 2 * Math.PI * y;
+  const lat = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+  return [lat, lng];
+}
+function fitPoints(points, width, height, { maxZoom = 16, padding = 50 } = {}) {
+  if (!points.length || !width || !height) return null;
+  if (points.length === 1) return { center: points[0], zoom: Math.min(15, maxZoom) };
+  const proj = points.map(project);
+  const minX = Math.min(...proj.map((p) => p[0]));
+  const maxX = Math.max(...proj.map((p) => p[0]));
+  const minY = Math.min(...proj.map((p) => p[1]));
+  const maxY = Math.max(...proj.map((p) => p[1]));
+  const TILE = 256;
+  const availW = Math.max(1, width - padding * 2);
+  const availH = Math.max(1, height - padding * 2);
+  const spanX = Math.max(maxX - minX, 1e-9);
+  const spanY = Math.max(maxY - minY, 1e-9);
+  const zoom = Math.max(1, Math.min(Math.log2(availW / (TILE * spanX)), Math.log2(availH / (TILE * spanY)), maxZoom));
+  const center = unproject([(minX + maxX) / 2, (minY + maxY) / 2]);
+  return { center, zoom };
 }
 
-// flies the map to a target place whenever it changes
-function FlyTo({ target }) {
-  const map = useMap();
-  useEffect(() => {
-    if (target && target.lat) {
-      map.flyTo([target.lat, target.lng], Math.max(map.getZoom() || 14, 14), { duration: 0.8 });
-    }
-  }, [target]);
-  return null;
+function coloredPin(color) {
+  return (
+    <div style={{ width: 18, height: 18, borderRadius: '50% 50% 50% 0', transform: 'rotate(-45deg) translate(-50%, -100%)', background: color || '#0a0a0a', border: '2.5px solid #fff', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }} />
+  );
 }
-
-function FitBounds({ places, signal }) {
-  const map = useMap();
-  useEffect(() => {
-    if (!places.length) return;
-    const bounds = L.latLngBounds(places.map((p) => [p.lat, p.lng]));
-    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
-  }, [signal]);
-  return null;
-}
-
-function clusterIcon(count) {
-  return L.divIcon({
-    className: '',
-    html: `<div style="width:30px;height:30px;border-radius:50%;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2.5px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3)">${count}</div>`,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
-  });
+function clusterBadge(count) {
+  return (
+    <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#0a0a0a', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, border: '2.5px solid #fff', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', transform: 'translate(-50%, -50%)' }}>
+      {count}
+    </div>
+  );
 }
 
 // smart pin-density clustering: at low zoom nearby pins collapse into a count
 // badge (tap to zoom in); at high zoom every pin shows individually, coloured
-// to match its folder. tap any pin to open its contents.
-function MarkerLayer({ places }) {
-  const map = useMap();
-  const [zoom, setZoom] = useState(map.getZoom() || 2);
-  useMapEvents({
-    zoomend: () => setZoom(map.getZoom()),
-    moveend: () => setZoom(map.getZoom()),
-  });
+// to match its folder. tap any pin to open its popup.
+function MarkerLayer({ places, zoom, onPinClick, onClusterClick, selected }) {
   const prec = zoom <= 12 ? Math.max(1, 9 - Math.floor(zoom)) : 99;
   const buckets = {};
   places.forEach((p) => {
@@ -207,9 +198,16 @@ function MarkerLayer({ places }) {
     if (bucket.length === 1) {
       const p = bucket[0];
       return (
-        <Marker key={p.id} position={[p.lat, p.lng]} icon={coloredIcon(p.folderColor)}>
-          <Popup>
-            <div className="text-sm max-w-[200px]">
+        <Overlay key={p.id} anchor={[p.lat, p.lng]} offset={[0, 0]}>
+          <div onClick={(e) => { e.stopPropagation(); onPinClick(p); }} style={{ cursor: 'pointer' }}>
+            {coloredPin(p.folderColor)}
+          </div>
+          {selected === p.id && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="text-sm max-w-[200px] bg-white text-black rounded-xl shadow-xl p-2"
+              style={{ position: 'absolute', bottom: 26, left: '50%', transform: 'translateX(-50%)' }}
+            >
               {p.photo && <img src={p.photo} alt="" className="w-full h-24 object-cover rounded-lg mb-1" />}
               <p className="font-bold">{p.name}</p>
               {p.address && <p className="text-xs text-gray-500">{p.address}</p>}
@@ -220,19 +218,18 @@ function MarkerLayer({ places }) {
                 </a>
               )}
             </div>
-          </Popup>
-        </Marker>
+          )}
+        </Overlay>
       );
     }
     const lat = bucket.reduce((s, p) => s + p.lat, 0) / bucket.length;
     const lng = bucket.reduce((s, p) => s + p.lng, 0) / bucket.length;
     return (
-      <Marker
-        key={'c:' + lat + '|' + lng}
-        position={[lat, lng]}
-        icon={clusterIcon(bucket.length)}
-        eventHandlers={{ click: () => map.flyTo([lat, lng], Math.min(18, zoom + 2)) }}
-      />
+      <Overlay key={'c:' + lat + '|' + lng} anchor={[lat, lng]} offset={[0, 0]}>
+        <div onClick={(e) => { e.stopPropagation(); onClusterClick(lat, lng); }} style={{ cursor: 'pointer' }}>
+          {clusterBadge(bucket.length)}
+        </div>
+      </Overlay>
     );
   });
 }
@@ -253,6 +250,11 @@ export default function MapPage() {
   const [flyTarget, setFlyTarget] = useState(null);
   const [filterSignal, setFilterSignal] = useState(0);
   const [folderMenu, setFolderMenu] = useState(null);
+  const [center, setCenter] = useState([20, 0]);
+  const [zoom, setZoom] = useState(2);
+  const [selectedPin, setSelectedPin] = useState(null);
+  const mapWrapRef = useRef(null);
+  const [mapSize, setMapSize] = useState({ w: 0, h: 0 });
 
   const refresh = () => setFolders(getMapFolders());
 
@@ -295,6 +297,40 @@ export default function MapPage() {
     : allPlaces.filter((p) => activeFolders.includes(p.folderId));
   const mappedPlaces = visiblePlaces.filter((p) => p.lat && p.lng);
 
+  // track the map's actual pixel size so fitPoints() can compute a zoom
+  // level that really fits the container, not a guess.
+  useEffect(() => {
+    if (!mapWrapRef.current) return;
+    const el = mapWrapRef.current;
+    const update = () => setMapSize({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // fit all currently-visible pins whenever the folder filter changes, and
+  // once on first load — this is what makes "show as many pins as possible"
+  // work on re-entering the page or after (re)filtering.
+  useEffect(() => {
+    if (!mapSize.w || !mapSize.h) return;
+    if (!mappedPlaces.length) return;
+    const fit = fitPoints(mappedPlaces.map((p) => [p.lat, p.lng]), mapSize.w, mapSize.h);
+    if (fit) { setCenter(fit.center); setZoom(fit.zoom); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterSignal, mapSize.w, mapSize.h, mappedPlaces.length]);
+
+  // zoom into a specific place whenever it's targeted (new place just
+  // created, or an existing one tapped in the list/on the map).
+  useEffect(() => {
+    if (flyTarget && flyTarget.lat) {
+      setCenter([flyTarget.lat, flyTarget.lng]);
+      setZoom((z) => Math.max(z, 15));
+      setSelectedPin(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flyTarget]);
+
   const toggleFolderFilter = (id) => {
     setActiveFolders((prev) => {
       if (prev === null) return [id];
@@ -320,9 +356,7 @@ export default function MapPage() {
     refresh();
   };
 
-  const [resolving, setResolving] = useState(false);
-
-  const handlePlaceSave = async (folderId, placeId, data) => {
+  const [resolving, setResolving] = useState(false);  const handlePlaceSave = async (folderId, placeId, data) => {
     if (!folderId) return;
     const manual = parseManualCoords(data.manualCoords);
     if (placeId) {
@@ -373,8 +407,6 @@ export default function MapPage() {
     if (created && coords?.lat) setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
   };
 
-  const center = mappedPlaces[0] ? [mappedPlaces[0].lat, mappedPlaces[0].lng] : [51.505, -0.09];
-
   return (
     <div className="safe-top px-4 pb-4 min-h-screen">
       <header className="mb-4">
@@ -407,31 +439,31 @@ export default function MapPage() {
         </div>
       )}
 
-      {/* map — collapses when a place is being edited. Always rendered
+      {/* map — collapses when a place is being edited. always rendered
           (not gated on having any resolved places) so the base map itself
-          is always visible — it previously only rendered once at least one
-          place had valid coordinates, so a place that failed to geocode
-          (network hiccup, etc.) meant no map showed at all, just an empty
-          placeholder, which read as "the map doesn't work". */}
-      <div className={`rounded-2xl overflow-hidden mb-4 transition-all duration-300 ${editingPlace ? 'h-36' : 'h-64'}`}>
-        {/* zoom is now always a real number (was `mappedPlaces.length ?
-            undefined : 2`) — MapContainer's center/zoom props only apply
-            once, at construction, and Leaflet's L.Map never calls its
-            initial setView() at all when zoom is undefined. that's the
-            actual "blank map" bug: as soon as one place had resolved
-            coordinates, the map lost its only defined initial view and
-            never rendered a single tile (or pin) until something else
-            explicitly called setView/fitBounds/flyTo — which, on a fresh
-            page load with places already saved, could be never. FitBounds
-            below still takes over immediately after mount to frame the
-            real pins; this zoom value is only the safe starting point. */}
-        <MapContainer center={center} zoom={2} className="w-full h-full" style={{ borderRadius: '1rem' }}>
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; openstreetmap" />
-          <SyncSize />
-          <FlyTo target={flyTarget} />
-          <FitBounds places={mappedPlaces} signal={filterSignal} />
-          <MarkerLayer places={mappedPlaces} />
-        </MapContainer>
+          is always visible. */}
+      <div ref={mapWrapRef} className={`relative rounded-2xl overflow-hidden mb-4 transition-all duration-300 ${editingPlace ? 'h-36' : 'h-64'}`}>
+        {mapSize.w > 0 && (
+          <PigeonMap
+            center={center}
+            zoom={zoom}
+            width={mapSize.w}
+            height={mapSize.h}
+            animate
+            animateMaxScreens={10}
+            onBoundsChanged={({ center: c, zoom: z }) => { setCenter(c); setZoom(z); }}
+            onClick={() => setSelectedPin(null)}
+          >
+            <MarkerLayer
+              places={mappedPlaces}
+              zoom={zoom}
+              selected={selectedPin}
+              onPinClick={(p) => setSelectedPin((cur) => (cur === p.id ? null : p.id))}
+              onClusterClick={(lat, lng) => { setCenter([lat, lng]); setZoom((z) => Math.min(18, z + 2)); }}
+            />
+          </PigeonMap>
+        )}
+        <span className="absolute bottom-1 right-1.5 text-[9px] text-black/40 bg-white/60 px-1 rounded pointer-events-none">© OpenStreetMap</span>
       </div>
       {mappedPlaces.length === 0 && (
         <p className="text-xs text-muted-foreground/50 lowercase -mt-2 mb-4">add a place below with a google maps link — it'll appear on the map above once resolved</p>

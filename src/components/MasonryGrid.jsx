@@ -4,11 +4,13 @@ import ItemBlock from './ItemBlock';
 import { BLOCK_SIZES } from '@/lib/store';
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 
-// freeform skyline packer: every card keeps its own pixel width + height and
-// drops onto the lowest available gap on the skyline — so cards never overlap,
-// resizing one card reflows the rest, and any of the four edges can be dragged
-// freely (no column snapping, no glitch). defaults still derive from the
-// stored aspect/span so existing cards keep their look until resized.
+// row-flow layout: every card keeps its own pixel width + height and lines
+// up left-to-right in order, wrapping to a new row when it doesn't fit —
+// so cards never overlap, resizing one card reflows the rest, and any of
+// the four edges can be dragged freely (no column snapping, no glitch).
+// defaults still derive from the stored aspect/span so existing cards keep
+// their look until resized. (see packSkyline() below for why this isn't
+// an actual skyline packer anymore.)
 const GAP = 14;
 const H_MARGIN = 6;
 const MIN_W = 120;
@@ -28,43 +30,35 @@ function parseRatio(r) {
   return parts[0] / parts[1];
 }
 
-// skyline bottom-left bin packing — returns [{x,y,w,h}] for each item, in order.
+// row-flow layout: items are placed strictly in order, left-to-right,
+// wrapping to a new row once the running width would exceed the
+// container — like a plain flex-wrap row, not a skyline packer.
+//
+// this replaces a skyline bin-packer that used to decide each item's
+// position by "lowest available Y anywhere in the grid" rather than "next
+// to its neighbours in the order array." that's an optimal-packing
+// strategy, not a predictable one: once blocks had different heights,
+// reordering the array didn't reliably move a block to where it was
+// visually dropped — the packer could reflow it to some other gap
+// entirely. that mismatch between "the order changed" and "the block
+// visually moved" is what made dragging look like it only ever worked in
+// one direction, refused to land between two blocks, or landed somewhere
+// unrelated to the drop point. with row-flow, order IS visual position by
+// construction, so there's nothing left to surprise the reorder logic.
 function packSkyline(items, containerW) {
   const W = Math.max(1, containerW);
-  let sky = [{ x1: 0, x2: W, y: 0 }];
   const placed = [];
+  let x = 0, y = 0, rowH = 0;
   for (const it of items) {
-    let w = Math.max(MIN_W, Math.min(it.w, W));
-    let best = null;
-    for (let i = 0; i < sky.length; i++) {
-      const left = sky[i].x1;
-      const right = left + w;
-      if (right > W + 0.5) continue;
-      let y = 0;
-      for (const s of sky) {
-        if (s.x2 <= left || s.x1 >= right) continue;
-        if (s.y > y) y = s.y;
-      }
-      if (!best || y < best.y) best = { x: left, y };
+    const w = Math.max(MIN_W, Math.min(it.w, W));
+    if (x > 0 && x + w > W + 0.5) {
+      y += rowH + GAP;
+      x = 0;
+      rowH = 0;
     }
-    if (!best) { best = { x: 0, y: sky.reduce((m, s) => Math.max(m, s.y), 0) }; w = W; }
-    placed.push({ x: best.x, y: best.y, w, h: it.h });
-    const top = best.y + it.h + GAP;
-    const next = [];
-    for (const s of sky) {
-      if (s.x2 <= best.x || s.x1 >= best.x + w) { next.push(s); continue; }
-      if (s.x1 < best.x) next.push({ x1: s.x1, x2: best.x, y: s.y });
-      if (s.x2 > best.x + w) next.push({ x1: best.x + w, x2: s.x2, y: s.y });
-      next.push({ x1: Math.max(s.x1, best.x), x2: Math.min(s.x2, best.x + w), y: top });
-    }
-    next.sort((a, b) => a.x1 - b.x1);
-    const merged = [];
-    for (const s of next) {
-      const last = merged[merged.length - 1];
-      if (last && last.x2 === s.x1 && last.y === s.y) merged[merged.length - 1] = { x1: last.x1, x2: s.x2, y: s.y };
-      else merged.push(s);
-    }
-    sky = merged;
+    placed.push({ x, y, w, h: it.h });
+    x += w + GAP;
+    if (it.h > rowH) rowH = it.h;
   }
   return placed;
 }

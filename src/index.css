@@ -133,23 +133,3 @@
 .wheel-item {
   transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
 }
-
-/* leaflet overrides for dark mode */
-.dark .leaflet-tile-pane {
-  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
-}
-.leaflet-container {
-  font-family: var(--font-body);
-  border-radius: 1.25rem;
-}
-/* defensive: Tailwind's preflight sets `img { max-width: 100%; height:
-   auto; }`, which — depending on Leaflet's exact version/build — can
-   collide with the tile <img> elements it lays out by explicit pixel
-   geometry, shrinking or hiding them so the map renders blank even though
-   requests for tiles are going out fine. Leaflet's own CSS already tries
-   to guard against this, but pinning it here too costs nothing and removes
-   this class of bug entirely regardless of package version. */
-.leaflet-container img {
-  max-width: none !important;
-  max-height: none !important;
-}
