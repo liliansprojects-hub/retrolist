@@ -56,7 +56,7 @@ function packSkyline(items, containerW) {
       x = 0;
       rowH = 0;
     }
-    placed.push({ x, y, w, h: it.h });
+    placed.push({ id: it.id, x, y, w, h: it.h });
     x += w + GAP;
     if (it.h > rowH) rowH = it.h;
   }
@@ -122,7 +122,11 @@ export default function MasonryGrid({ folders, editMode, onResize, onReorder, on
   const placedM = placed.map((p) => ({ ...p, x: p.x + H_MARGIN, w: Math.max(MIN_W, p.w - 2 * H_MARGIN) }));
   const totalH = placedM.reduce((m, p) => Math.max(m, p.y + p.h), 0) + extraHRef.current;
 
-  const placedRef = useRef(placed); placedRef.current = placed;
+  // hit-testing in onMove needs the SAME coordinate space the pointer is
+  // measured in (relative to the container, i.e. including the horizontal
+  // margin) — using the pre-margin `placed` here silently offset every
+  // target rect by H_MARGIN, on top of the missing-id bug above.
+  const placedRef = useRef(placedM); placedRef.current = placedM;
 
   // packItems only carries packing geometry (id/w/h/order) for the skyline
   // math — look the real folder record back up by id so the card/item block

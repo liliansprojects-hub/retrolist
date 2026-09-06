@@ -44,15 +44,31 @@ function parseMapsUrl(url) {
   return null;
 }
 
+// every network call below now goes through this — a proxy or geocoder
+// that hangs (rather than erroring quickly) previously had no timeout at
+// all, so "add place" could sit doing nothing for a very long time with
+// zero feedback, which reads exactly like "the button doesn't work."
+// capped at a few seconds each, this guarantees the save always completes
+// promptly — worst case, the place saves without a pin instead of hanging.
+async function fetchWithTimeout(url, opts = {}, ms = 6000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function geocode(address) {
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`
     );
     const data = await res.json();
     if (data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
   } catch {
-    /* offline — store without coords */
+    /* offline, blocked, or timed out — save without coords rather than hang */
   }
   return null;
 }
@@ -75,7 +91,7 @@ async function resolveShortLink(url) {
   ];
   for (const buildProxyUrl of proxies) {
     try {
-      const res = await fetch(buildProxyUrl(url), { redirect: 'follow' });
+      const res = await fetchWithTimeout(buildProxyUrl(url), { redirect: 'follow' }, 6000);
       const finalUrl = res.url || url;
       const coords = parseMapsUrl(finalUrl);
       if (coords && coords.lat) return coords;
@@ -102,23 +118,33 @@ async function resolveShortLink(url) {
 }
 
 async function resolveCoords({ url, address }) {
-  let coords = null;
-  if (url) {
-    const parsed = parseMapsUrl(url);
-    if (parsed?.lat) coords = parsed;
-    else if (parsed?.placeName) coords = await geocode(parsed.placeName);
-    // fall back to actually fetching the real Google Maps page and scraping
-    // its embedded coordinates — not just for goo.gl/maps.app short links,
-    // but for ANY maps URL once a plain Nominatim name search comes up
-    // empty. Modern Google share links are often long-format, place-ID-based
-    // URLs (no @lat,lng in the URL itself), and Nominatim's business/venue
-    // name coverage is much weaker than Google's — searching by bare name
-    // frequently fails for real places, while the actual page HTML almost
-    // always has the true coordinates embedded somewhere.
-    if (!coords) coords = await resolveShortLink(url);
-  }
-  if (!coords && address) coords = await geocode(address);
-  return coords;
+  const attempt = (async () => {
+    let coords = null;
+    if (url) {
+      const parsed = parseMapsUrl(url);
+      if (parsed?.lat) coords = parsed;
+      else if (parsed?.placeName) coords = await geocode(parsed.placeName);
+      // fall back to actually fetching the real Google Maps page and scraping
+      // its embedded coordinates — not just for goo.gl/maps.app short links,
+      // but for ANY maps URL once a plain Nominatim name search comes up
+      // empty. Modern Google share links are often long-format, place-ID-based
+      // URLs (no @lat,lng in the URL itself), and Nominatim's business/venue
+      // name coverage is much weaker than Google's — searching by bare name
+      // frequently fails for real places, while the actual page HTML almost
+      // always has the true coordinates embedded somewhere.
+      if (!coords) coords = await resolveShortLink(url);
+    }
+    if (!coords && address) coords = await geocode(address);
+    return coords;
+  })();
+  // belt-and-suspenders: fetchWithTimeout already caps each individual
+  // network call, but this caps the WHOLE resolution attempt too, so
+  // "add place" is guaranteed to finish (with or without a pin) in a
+  // bounded time no matter what goes wrong underneath.
+  return Promise.race([
+    attempt,
+    new Promise((resolve) => setTimeout(() => resolve(null), 15000)),
+  ]);
 }
 
 // last-resort, 100%-reliable path: a "lat, lng" pair typed/pasted straight
@@ -356,55 +382,72 @@ export default function MapPage() {
     refresh();
   };
 
-  const [resolving, setResolving] = useState(false);  const handlePlaceSave = async (folderId, placeId, data) => {
-    if (!folderId) return;
-    const manual = parseManualCoords(data.manualCoords);
-    if (placeId) {
+  const [resolving, setResolving] = useState(false);
+  const handlePlaceSave = async (folderId, placeId, data) => {
+    // nothing worth saving yet — leave the editor open rather than closing
+    // it on an empty save (unchanged from before).
+    if (!placeId && !data.name?.trim() && !data.url?.trim()) return;
+    // defensive: guarantee there's always a real folder to save into, even
+    // if this got called with no folderId (e.g. the corner + button when
+    // the map had no folders at all yet) — previously that silently did
+    // nothing at all, no error, no saved place, nothing.
+    let realFolderId = folderId;
+    if (!realFolderId) {
+      const existing = getMapFolders();
+      realFolderId = existing[0]?.id || addMapFolder({ name: 'saved places' }).id;
+    }
+    try {
+      const manual = parseManualCoords(data.manualCoords);
+      if (placeId) {
+        let coords = manual;
+        if (!coords) {
+          // re-resolve whenever the link/address actually changed — editing
+          // an existing place used to just save the new text without ever
+          // trying to (re)find coordinates for it, so fixing a broken link on
+          // an already-saved place could never plot it, only saving fresh new
+          // places ever attempted resolution at all.
+          const existing = editingPlace?.place || {};
+          if ((data.url || '') !== (existing.url || '') || (data.address || '') !== (existing.address || '')) {
+            setResolving(true);
+            coords = await resolveCoords({ url: data.url, address: data.address });
+            setResolving(false);
+          }
+        }
+        updatePlace(realFolderId, placeId, {
+          name: data.name, subheading: data.subheading, address: data.address, url: data.url,
+          notes: data.notes, photo: data.photo, color: data.color,
+          ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
+        });
+        if (coords?.lat) setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
+        return;
+      }
       let coords = manual;
       if (!coords) {
-        // re-resolve whenever the link/address actually changed — editing
-        // an existing place used to just save the new text without ever
-        // trying to (re)find coordinates for it, so fixing a broken link on
-        // an already-saved place could never plot it, only saving fresh new
-        // places ever attempted resolution at all.
-        const existing = editingPlace?.place || {};
-        if ((data.url || '') !== (existing.url || '') || (data.address || '') !== (existing.address || '')) {
-          setResolving(true);
-          coords = await resolveCoords({ url: data.url, address: data.address });
-          setResolving(false);
-        }
+        setResolving(true);
+        coords = await resolveCoords({ url: data.url, address: data.address });
+        setResolving(false);
       }
-      updatePlace(folderId, placeId, {
-        name: data.name, subheading: data.subheading, address: data.address, url: data.url,
-        notes: data.notes, photo: data.photo, color: data.color,
-        ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
+      const created = addPlace(realFolderId, {
+        name: data.name.trim() || 'unnamed place',
+        subheading: data.subheading?.trim() || '',
+        address: data.address?.trim() || '',
+        url: data.url?.trim() || '',
+        notes: data.notes?.trim() || '',
+        photo: data.photo || null,
+        color: data.color || '',
+        lat: coords?.lat || null,
+        lng: coords?.lng || null,
       });
+      if (created && coords?.lat) setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
+    } catch (err) {
+      // never leave the editor stuck open with no feedback and nothing
+      // saved just because coordinate resolution (network-dependent) threw
+      console.error('place save failed', err);
+    } finally {
+      setResolving(false);
       setEditingPlace(null);
       refresh();
-      if (coords?.lat) setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
-      return;
     }
-    if (!data.name?.trim() && !data.url?.trim()) return;
-    let coords = manual;
-    if (!coords) {
-      setResolving(true);
-      coords = await resolveCoords({ url: data.url, address: data.address });
-      setResolving(false);
-    }
-    const created = addPlace(folderId, {
-      name: data.name.trim() || 'unnamed place',
-      subheading: data.subheading?.trim() || '',
-      address: data.address?.trim() || '',
-      url: data.url?.trim() || '',
-      notes: data.notes?.trim() || '',
-      photo: data.photo || null,
-      color: data.color || '',
-      lat: coords?.lat || null,
-      lng: coords?.lng || null,
-    });
-    setEditingPlace(null);
-    refresh();
-    if (created && coords?.lat) setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
   };
 
   return (
