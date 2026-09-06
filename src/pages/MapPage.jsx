@@ -33,13 +33,17 @@ function parseMapsUrl(url) {
   if (coordMatch) return { lat: parseFloat(coordMatch[1]), lng: parseFloat(coordMatch[2]) };
   const placeMatch = url.match(/maps\/(?:place|search)\/([^/@?#]+)/);
   if (placeMatch) {
-    const name = decodeURIComponent(placeMatch[1].replace(/\+/g, ' ')).trim();
-    if (name) return { placeName: name };
+    try {
+      const name = decodeURIComponent(placeMatch[1].replace(/\+/g, ' ')).trim();
+      if (name) return { placeName: name };
+    } catch { /* malformed %-encoding in a pasted link — fall through */ }
   }
   const qText = url.match(/[?&](?:q|query)=([^&#]+)/);
   if (qText) {
-    const name = decodeURIComponent(qText[1]).replace(/^[-\d.]+,[-\d.]+$/, '').trim();
-    if (name) return { placeName: name };
+    try {
+      const name = decodeURIComponent(qText[1]).replace(/^[-\d.]+,[-\d.]+$/, '').trim();
+      if (name) return { placeName: name };
+    } catch { /* malformed %-encoding — fall through */ }
   }
   return null;
 }
@@ -383,7 +387,17 @@ export default function MapPage() {
   };
 
   const [resolving, setResolving] = useState(false);
-  const handlePlaceSave = async (folderId, placeId, data) => {
+  // the "add place" window used to `await resolveCoords(...)` before ever
+  // saving anything or closing itself — so whenever a google maps link was
+  // present (the ONLY time real network calls actually happen; a bare name
+  // with no link/address saves instantly with nothing to look up), the
+  // window sat there until every proxy attempt settled. That's not really
+  // fixable by tuning timeouts further — waiting on a network call before
+  // saving is the wrong shape for this action. Saving now happens
+  // synchronously and closes the window immediately every time, and
+  // coordinate lookup runs afterward in the background, patching the pin
+  // in (and flying the map to it) whenever it resolves.
+  const handlePlaceSave = (folderId, placeId, data) => {
     // nothing worth saving yet — leave the editor open rather than closing
     // it on an empty save (unchanged from before).
     if (!placeId && !data.name?.trim() && !data.url?.trim()) return;
@@ -396,58 +410,53 @@ export default function MapPage() {
       const existing = getMapFolders();
       realFolderId = existing[0]?.id || addMapFolder({ name: 'saved places' }).id;
     }
-    try {
-      const manual = parseManualCoords(data.manualCoords);
-      if (placeId) {
-        let coords = manual;
-        if (!coords) {
-          // re-resolve whenever the link/address actually changed — editing
-          // an existing place used to just save the new text without ever
-          // trying to (re)find coordinates for it, so fixing a broken link on
-          // an already-saved place could never plot it, only saving fresh new
-          // places ever attempted resolution at all.
-          const existing = editingPlace?.place || {};
-          if ((data.url || '') !== (existing.url || '') || (data.address || '') !== (existing.address || '')) {
-            setResolving(true);
-            coords = await resolveCoords({ url: data.url, address: data.address });
-            setResolving(false);
+    const manual = parseManualCoords(data.manualCoords);
+
+    const resolveInBackground = (targetPlaceId, needsLookup) => {
+      if (!needsLookup) return;
+      setResolving(true);
+      resolveCoords({ url: data.url, address: data.address })
+        .then((coords) => {
+          if (coords?.lat) {
+            updatePlace(realFolderId, targetPlaceId, { lat: coords.lat, lng: coords.lng });
+            refresh();
+            setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
           }
-        }
-        updatePlace(realFolderId, placeId, {
-          name: data.name, subheading: data.subheading, address: data.address, url: data.url,
-          notes: data.notes, photo: data.photo, color: data.color,
-          ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
-        });
-        if (coords?.lat) setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
-        return;
-      }
-      let coords = manual;
-      if (!coords) {
-        setResolving(true);
-        coords = await resolveCoords({ url: data.url, address: data.address });
-        setResolving(false);
-      }
-      const created = addPlace(realFolderId, {
-        name: data.name.trim() || 'unnamed place',
-        subheading: data.subheading?.trim() || '',
-        address: data.address?.trim() || '',
-        url: data.url?.trim() || '',
-        notes: data.notes?.trim() || '',
-        photo: data.photo || null,
-        color: data.color || '',
-        lat: coords?.lat || null,
-        lng: coords?.lng || null,
+        })
+        .catch((err) => console.error('place geocoding failed', err))
+        .finally(() => setResolving(false));
+    };
+
+    if (placeId) {
+      const existing = editingPlace?.place || {};
+      const linkChanged = (data.url || '') !== (existing.url || '') || (data.address || '') !== (existing.address || '');
+      updatePlace(realFolderId, placeId, {
+        name: data.name, subheading: data.subheading, address: data.address, url: data.url,
+        notes: data.notes, photo: data.photo, color: data.color,
+        ...(manual ? { lat: manual.lat, lng: manual.lng } : {}),
       });
-      if (created && coords?.lat) setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
-    } catch (err) {
-      // never leave the editor stuck open with no feedback and nothing
-      // saved just because coordinate resolution (network-dependent) threw
-      console.error('place save failed', err);
-    } finally {
-      setResolving(false);
+      if (manual) setFlyTarget({ lat: manual.lat, lng: manual.lng, ts: Date.now() });
+      else if (linkChanged) resolveInBackground(placeId, true);
       setEditingPlace(null);
       refresh();
+      return;
     }
+
+    const created = addPlace(realFolderId, {
+      name: data.name.trim() || 'unnamed place',
+      subheading: data.subheading?.trim() || '',
+      address: data.address?.trim() || '',
+      url: data.url?.trim() || '',
+      notes: data.notes?.trim() || '',
+      photo: data.photo || null,
+      color: data.color || '',
+      lat: manual?.lat || null,
+      lng: manual?.lng || null,
+    });
+    setEditingPlace(null);
+    refresh();
+    if (manual) setFlyTarget({ lat: manual.lat, lng: manual.lng, ts: Date.now() });
+    else if (created && (data.url?.trim() || data.address?.trim())) resolveInBackground(created.id, true);
   };
 
   return (
@@ -507,6 +516,11 @@ export default function MapPage() {
           </PigeonMap>
         )}
         <span className="absolute bottom-1 right-1.5 text-[9px] text-black/40 bg-white/60 px-1 rounded pointer-events-none">© OpenStreetMap</span>
+        {resolving && (
+          <span className="absolute top-2 left-2 text-[10px] bg-black/70 text-white px-2 py-1 rounded-full lowercase pointer-events-none">
+            locating…
+          </span>
+        )}
       </div>
       {mappedPlaces.length === 0 && (
         <p className="text-xs text-muted-foreground/50 lowercase -mt-2 mb-4">add a place below with a google maps link — it'll appear on the map above once resolved</p>
