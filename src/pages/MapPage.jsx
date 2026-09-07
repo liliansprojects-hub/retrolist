@@ -78,11 +78,47 @@ async function geocode(address) {
 }
 
 async function resolveShortLink(url) {
-  // try more than one public CORS proxy — if corsproxy.io is down, rate
-  // limited, or has changed its API (this is exactly the kind of failure
-  // that would break identically on Base44's own hosting too, since this
-  // all runs client-side regardless of where the frontend is deployed),
-  // a second option gives this a real chance of still working.
+  // Strategy 1: services that just chase the HTTP redirect chain and hand
+  // back the final URL, without ever rendering/scraping Google's actual
+  // page. This matters because Google very often serves a cookie-consent
+  // wall instead of real content to any request that isn't a normal
+  // logged-in browser session — a proxy that has to read the rendered page
+  // hits that wall and comes back with nothing, no matter how good the
+  // regex is. Redirects themselves aren't consent-gated, so this sidesteps
+  // the problem rather than trying to defeat it. maps.app.goo.gl links
+  // resolve to a full google.com/maps/place/.../@lat,lng,zoom/... URL,
+  // which already has the coordinates sitting in the URL itself.
+  const redirectResolvers = [
+    async (u) => {
+      const res = await fetchWithTimeout(`https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, {}, 6000);
+      const json = await res.json();
+      return json?.status?.url || null;
+    },
+    async (u) => {
+      const res = await fetchWithTimeout(`https://unshorten.me/json/${encodeURIComponent(u)}`, {}, 6000);
+      const json = await res.json();
+      return json?.resolved_url || null;
+    },
+  ];
+  for (const resolve of redirectResolvers) {
+    try {
+      const finalUrl = await resolve(url);
+      if (finalUrl) {
+        const coords = parseMapsUrl(finalUrl);
+        if (coords?.lat) return coords;
+        if (coords?.placeName) {
+          const g = await geocode(coords.placeName);
+          if (g) return g;
+        }
+      }
+    } catch {
+      // try the next resolver
+    }
+  }
+
+  // Strategy 2: actually fetch and scrape the rendered page for embedded
+  // coordinates — a second line of defense for links that don't carry
+  // @lat,lng even in their fully-resolved form.
   const proxies = [
     // r.jina.ai renders the page (handles JS-based consent walls Google can
     // throw at plain scraper requests) and returns clean text — tried
@@ -142,12 +178,13 @@ async function resolveCoords({ url, address }) {
     return coords;
   })();
   // belt-and-suspenders: fetchWithTimeout already caps each individual
-  // network call, but this caps the WHOLE resolution attempt too, so
-  // "add place" is guaranteed to finish (with or without a pin) in a
-  // bounded time no matter what goes wrong underneath.
+  // network call, but this caps the WHOLE resolution attempt too. This
+  // runs entirely in the background now (see handlePlaceSave), so a
+  // generous ceiling here just means more of the fallback strategies get
+  // a real chance to run before giving up, with no UI cost either way.
   return Promise.race([
     attempt,
-    new Promise((resolve) => setTimeout(() => resolve(null), 15000)),
+    new Promise((resolve) => setTimeout(() => resolve(null), 30000)),
   ]);
 }
 
@@ -461,6 +498,13 @@ export default function MapPage() {
 
   return (
     <div className="safe-top px-4 pb-4 min-h-screen">
+      {resolving && (
+        <div className="fixed top-0 left-0 right-0 z-[60] flex justify-center pointer-events-none">
+          <span className="mt-[calc(env(safe-area-inset-top,0px)+8px)] text-[11px] bg-black/80 text-white px-3 py-1.5 rounded-full lowercase shadow-lg">
+            locating…
+          </span>
+        </div>
+      )}
       <header className="mb-4">
         <h1 className="text-3xl font-extrabold lowercase tracking-tight">map</h1>
         <p className="text-sm text-muted-foreground lowercase mt-0.5">places you want to go</p>
@@ -516,11 +560,6 @@ export default function MapPage() {
           </PigeonMap>
         )}
         <span className="absolute bottom-1 right-1.5 text-[9px] text-black/40 bg-white/60 px-1 rounded pointer-events-none">© OpenStreetMap</span>
-        {resolving && (
-          <span className="absolute top-2 left-2 text-[10px] bg-black/70 text-white px-2 py-1 rounded-full lowercase pointer-events-none">
-            locating…
-          </span>
-        )}
       </div>
       {mappedPlaces.length === 0 && (
         <p className="text-xs text-muted-foreground/50 lowercase -mt-2 mb-4">add a place below with a google maps link — it'll appear on the map above once resolved</p>
