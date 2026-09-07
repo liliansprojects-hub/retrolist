@@ -254,7 +254,16 @@ function clusterBadge(count) {
 // smart pin-density clustering: at low zoom nearby pins collapse into a count
 // badge (tap to zoom in); at high zoom every pin shows individually, coloured
 // to match its folder. tap any pin to open its popup.
-function MarkerLayer({ places, zoom, onPinClick, onClusterClick, selected }) {
+// NOT rendered as a JSX component (<MarkerLayer .../>) — pigeon-maps only
+// recognizes and positions Overlay/Marker elements that are DIRECT
+// children of <Map>, walking its own props.children one level deep to
+// inject them with projection info. Wrapping them in a separate component
+// puts them one level too deep for that to find — pigeon-maps silently
+// renders nothing for them, no error, which is exactly what "the map
+// zooms in but no pin ever shows up" looks like. Calling this as a plain
+// function (buildMarkers(...) inside <Map>{...}</Map>, not <MarkerLayer/>)
+// and letting its returned array sit directly in Map's children fixes it.
+function buildMarkers({ places, zoom, onPinClick, onClusterClick, selected }) {
   const prec = zoom <= 12 ? Math.max(1, 9 - Math.floor(zoom)) : 99;
   const buckets = {};
   places.forEach((p) => {
@@ -266,14 +275,28 @@ function MarkerLayer({ places, zoom, onPinClick, onClusterClick, selected }) {
       const p = bucket[0];
       return (
         <Overlay key={p.id} anchor={[p.lat, p.lng]} offset={[0, 0]}>
-          <div onClick={(e) => { e.stopPropagation(); onPinClick(p); }} style={{ cursor: 'pointer' }}>
+          <div
+            onClick={(e) => { e.stopPropagation(); onPinClick(p); }}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer' }}
+          >
             {coloredPin(p.folderColor)}
+            {/* the in-app place name, always visible on the map itself —
+                not a Google label, ours, in our own colour/contrast. */}
+            <span
+              style={{
+                marginTop: 2, fontSize: 11, fontWeight: 700, color: '#0a0a0a', background: 'rgba(255,255,255,0.92)',
+                padding: '1px 6px', borderRadius: 6, whiteSpace: 'nowrap', maxWidth: 140, overflow: 'hidden',
+                textOverflow: 'ellipsis', boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
+              }}
+            >
+              {p.name}
+            </span>
           </div>
           {selected === p.id && (
             <div
               onClick={(e) => e.stopPropagation()}
               className="text-sm max-w-[200px] bg-white text-black rounded-xl shadow-xl p-2"
-              style={{ position: 'absolute', bottom: 26, left: '50%', transform: 'translateX(-50%)' }}
+              style={{ position: 'absolute', bottom: 44, left: '50%', transform: 'translateX(-50%)' }}
             >
               {p.photo && <img src={p.photo} alt="" className="w-full h-24 object-cover rounded-lg mb-1" />}
               <p className="font-bold">{p.name}</p>
@@ -393,7 +416,11 @@ export default function MapPage() {
     if (flyTarget && flyTarget.lat) {
       setCenter([flyTarget.lat, flyTarget.lng]);
       setZoom((z) => Math.max(z, 15));
-      setSelectedPin(null);
+      // select whichever place this fly-to is actually for (or none, for a
+      // plain re-center) — previously this always cleared the selection,
+      // which meant clicking a pin to show its popup and zoom to it in the
+      // same action instantly closed the popup it had just opened.
+      setSelectedPin(flyTarget.placeId ?? null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flyTarget]);
@@ -550,13 +577,13 @@ export default function MapPage() {
             onBoundsChanged={({ center: c, zoom: z }) => { setCenter(c); setZoom(z); }}
             onClick={() => setSelectedPin(null)}
           >
-            <MarkerLayer
-              places={mappedPlaces}
-              zoom={zoom}
-              selected={selectedPin}
-              onPinClick={(p) => setSelectedPin((cur) => (cur === p.id ? null : p.id))}
-              onClusterClick={(lat, lng) => { setCenter([lat, lng]); setZoom((z) => Math.min(18, z + 2)); }}
-            />
+            {buildMarkers({
+              places: mappedPlaces,
+              zoom,
+              selected: selectedPin,
+              onPinClick: (p) => setFlyTarget({ lat: p.lat, lng: p.lng, placeId: p.id, ts: Date.now() }),
+              onClusterClick: (lat, lng) => { setCenter([lat, lng]); setZoom((z) => Math.min(18, z + 2)); },
+            })}
           </PigeonMap>
         )}
         <span className="absolute bottom-1 right-1.5 text-[9px] text-black/40 bg-white/60 px-1 rounded pointer-events-none">© OpenStreetMap</span>
@@ -627,7 +654,7 @@ export default function MapPage() {
                   {(folder.places || []).map((p) => (
                     <div key={p.id} className="flex items-center gap-2 p-2.5 rounded-xl bg-muted/50">
                       <button
-                        onClick={() => { if (p.lat) setFlyTarget({ lat: p.lat, lng: p.lng, ts: Date.now() }); }}
+                        onClick={() => { if (p.lat) setFlyTarget({ lat: p.lat, lng: p.lng, placeId: p.id, ts: Date.now() }); }}
                         className="touch-44 w-10 h-10 rounded-lg flex items-center justify-center shrink-0 overflow-hidden"
                         style={{ backgroundColor: (p.color || folder.color || '#888') + '22' }}
                       >
