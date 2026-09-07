@@ -173,7 +173,7 @@ export default function PhotoGridEditor({ imageSrc, index = 0, total = 1, onAdd,
               alt=""
               draggable={false}
               className="absolute select-none pointer-events-none"
-              style={{ width: natural.w * dispScale, height: natural.h * dispScale, transform: `translate(${pos.x}px, ${pos.y}px)` }}
+              style={{ width: natural.w * dispScale, height: natural.h * dispScale, maxWidth: 'none', maxHeight: 'none', transform: `translate(${pos.x}px, ${pos.y}px)` }}
             />
           )}
           <div className="absolute inset-0 pointer-events-none z-10">

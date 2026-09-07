@@ -249,7 +249,7 @@ export default function CropModal({ imageSrc, aspect = 1, round = false, maxSize
               alt=""
               draggable={false}
               className="absolute select-none pointer-events-none"
-              style={{ width: natural.w * dispScale, height: natural.h * dispScale, transform: `translate(${pos.x}px, ${pos.y}px)` }}
+              style={{ width: natural.w * dispScale, height: natural.h * dispScale, maxWidth: 'none', maxHeight: 'none', transform: `translate(${pos.x}px, ${pos.y}px)` }}
             />
           )}
           {/* rule-of-thirds grid overlay */}
