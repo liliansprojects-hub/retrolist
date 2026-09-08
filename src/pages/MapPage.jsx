@@ -7,6 +7,8 @@ import {
 } from '@/lib/store';
 import ImageUpload from '@/components/ImageUpload';
 import ColorPicker from '@/components/ColorPicker';
+import { useSync } from '@/lib/SyncContext';
+import { WifiOff } from 'lucide-react';
 
 // NOTE ON THE MAP LIBRARY: this used to be react-leaflet. Leaflet's own
 // layout model depends entirely on a big external stylesheet
@@ -325,6 +327,22 @@ function buildMarkers({ places, zoom, onPinClick, onClusterClick, selected }) {
 }
 
 export default function MapPage() {
+  const { syncState } = useSync();
+  // navigator.onLine directly covers the instant the connection drops —
+  // syncState can lag a tick behind since it only updates on the
+  // window 'online'/'offline' events, so check both.
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
+  const mapIsOffline = !isOnline || syncState === 'offline';
   const [searchParams] = useSearchParams();
   const [folders, setFolders] = useState([]);
   const [expanded, setExpanded] = useState({});
@@ -587,6 +605,12 @@ export default function MapPage() {
           </PigeonMap>
         )}
         <span className="absolute bottom-1 right-1.5 text-[9px] text-black/40 bg-white/60 px-1 rounded pointer-events-none">© OpenStreetMap</span>
+        {mapIsOffline && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/80 backdrop-blur-sm">
+            <WifiOff className="w-6 h-6 text-muted-foreground" />
+            <p className="text-xs font-medium text-muted-foreground lowercase text-center px-6">currently offline — connect to use map</p>
+          </div>
+        )}
       </div>
       {mappedPlaces.length === 0 && (
         <p className="text-xs text-muted-foreground/50 lowercase -mt-2 mb-4">add a place below with a google maps link — it'll appear on the map above once resolved</p>
@@ -739,7 +763,7 @@ export default function MapPage() {
       <button
         onClick={() => setEditingPlace({ folderId: folders[0]?.id || null, place: {} })}
         className="fixed z-50 touch-44 flex items-center justify-center gap-1 w-16 h-14 rounded-full bg-foreground text-background shadow-lg shadow-foreground/20 active:scale-90 transition-transform icon-no-select"
-        style={{ bottom: '1.5rem', right: '1.5rem', touchAction: 'manipulation' }}
+        style={{ bottom: '6.5rem', right: '1.5rem', touchAction: 'manipulation' }}
         aria-label="add place"
       >
         <Plus className="w-5 h-5" />

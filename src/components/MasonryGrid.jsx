@@ -11,8 +11,8 @@ import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 // defaults still derive from the stored aspect/span so existing cards keep
 // their look until resized. (see packSkyline() below for why this isn't
 // an actual skyline packer anymore.)
-const GAP = 14;
-const H_MARGIN = 6;
+const GAP = 8;
+const H_MARGIN = 3;
 const MIN_W = 120;
 const MAX_W = 1000;
 const MIN_H = 90;

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, Trash2 } from 'lucide-react';
 import ColorPicker from './ColorPicker';
 import ImageUpload from './ImageUpload';
 import { LIST_TYPES, BLOCK_SIZES, getFolders } from '@/lib/store';
 
-export default function FolderEditModal({ open, onClose, onSave, folder, defaultType, defaultParentId }) {
+export default function FolderEditModal({ open, onClose, onSave, onDelete, folder, defaultType, defaultParentId }) {
   const [name, setName] = useState('');
   const [type, setType] = useState('list');
   const [color, setColor] = useState('#f4f4f5');
@@ -57,9 +57,16 @@ export default function FolderEditModal({ open, onClose, onSave, folder, default
       >
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-base font-semibold lowercase">{folder ? ('edit ' + (LIST_TYPES[folder.type]?.label || 'folder')) : ('new ' + (LIST_TYPES[defaultType]?.label || 'folder'))}</h3>
-          <button onClick={onClose} className="touch-44 p-1 rounded-full">
-            <X className="w-5 h-5 text-muted-foreground" />
-          </button>
+          <div className="flex items-center gap-1">
+            {folder && onDelete && (
+              <button onClick={() => { onDelete(); }} className="touch-44 p-1 rounded-full text-destructive">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            <button onClick={onClose} className="touch-44 p-1 rounded-full">
+              <X className="w-5 h-5 text-muted-foreground" />
+            </button>
+          </div>
         </div>
 
         {dupToast && (

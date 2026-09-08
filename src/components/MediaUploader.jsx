@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Upload, X, Download, FileText, Link as LinkIcon, Check } from 'lucide-react';
+import { Upload, Download, FileText, Link as LinkIcon, Check, Image as ImageIcon, Video as VideoIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import PhotoViewer from './PhotoViewer';
 import PhotoGridEditor from './PhotoGridEditor';
@@ -12,6 +12,7 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 // and per-item + bulk download (original quality preserved).
 export default function MediaUploader({ media = [], onChange, allowUrl = false, allowCaption = false, columns = 3, enableViewer = false, selectable = false, onDeleteItems }) {
   const imageRef = useRef(null);
+  const videoRef = useRef(null);
   const anyFileRef = useRef(null);
   const [urlInput, setUrlInput] = useState('');
   const [viewerIndex, setViewerIndex] = useState(null);
@@ -34,15 +35,43 @@ export default function MediaUploader({ media = [], onChange, allowUrl = false, 
     setSelectMode(false);
   };
   const toggleSel = (id) => setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const downloadSelected = () => {
+    const ids = [...selected];
+    ids.forEach((id, i) => {
+      const m = media.find((x) => x.id === id);
+      if (!m || m.type === 'url') return;
+      setTimeout(() => {
+        const a = document.createElement('a');
+        a.href = m.url;
+        a.download = m.name || `file-${i + 1}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }, i * 250);
+    });
+  };
 
   const addFiles = (files) => {
     const list = Array.from(files || []);
     const images = [];
+    const videos = [];
     const others = [];
-    list.forEach((file) => { (file.type.startsWith('image/') ? images : others).push(file); });
+    list.forEach((file) => {
+      if (file.type.startsWith('image/')) images.push(file);
+      else if (file.type.startsWith('video/')) videos.push(file);
+      else others.push(file);
+    });
     others.forEach((file) => {
       const reader = new FileReader();
       reader.onload = () => onChange([...media, { id: uid(), type: 'file', url: reader.result, name: file.name, size: file.size }]);
+      reader.readAsDataURL(file);
+    });
+    // videos skip the crop editor (that's an image-only tool) and go straight
+    // in — the video file itself is used as its own cover/preview, playing
+    // silently/muted in the grid tile instead of a separate thumbnail image.
+    videos.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => onChange([...media, { id: uid(), type: 'video', url: reader.result, name: file.name, size: file.size }]);
       reader.readAsDataURL(file);
     });
     if (images.length) {
@@ -97,9 +126,14 @@ export default function MediaUploader({ media = [], onChange, allowUrl = false, 
             {selectMode ? 'cancel' : 'select'}
           </button>
           {selectMode && selected.size > 0 && (
-            <button onClick={deleteSelected} className="touch-44 px-2.5 py-1 rounded-full bg-destructive text-destructive-foreground text-[11px] font-medium lowercase">
-              delete {selected.size}
-            </button>
+            <>
+              <button onClick={downloadSelected} className="touch-44 px-2.5 py-1 rounded-full bg-muted text-muted-foreground text-[11px] font-medium lowercase flex items-center gap-1">
+                <Download className="w-3 h-3" /> download {selected.size}
+              </button>
+              <button onClick={deleteSelected} className="touch-44 px-2.5 py-1 rounded-full bg-destructive text-destructive-foreground text-[11px] font-medium lowercase">
+                delete {selected.size}
+              </button>
+            </>
           )}
         </div>
       )}
@@ -126,6 +160,17 @@ export default function MediaUploader({ media = [], onChange, allowUrl = false, 
                 ) : (
                   <img src={m.url} alt={m.caption || ''} className="w-full aspect-square object-cover" />
                 )
+              ) : m.type === 'video' ? (
+                // the video file itself is the cover/preview — its first
+                // frame shows automatically as a static thumbnail; muted +
+                // no controls so it behaves like an image tile, not a player.
+                selectMode ? (
+                  <video src={m.url} muted playsInline className={cn('w-full aspect-square object-cover', selected.has(m.id) && 'opacity-50')} />
+                ) : (
+                  <a href={m.url} target="_blank" rel="noopener noreferrer" className="block w-full">
+                    <video src={m.url} muted playsInline className="w-full aspect-square object-cover" />
+                  </a>
+                )
               ) : m.type === 'file' ? (
                 <a href={m.url} download={m.name} onClick={selectMode ? (e) => { e.preventDefault(); toggleSel(m.id); } : undefined} className="flex flex-col items-center justify-center gap-1 w-full aspect-square p-2 text-center">
                   <FileText className="w-6 h-6 text-muted-foreground" />
@@ -142,23 +187,10 @@ export default function MediaUploader({ media = [], onChange, allowUrl = false, 
                   {selected.has(m.id) && <Check className="w-3 h-3" />}
                 </div>
               )}
-              {!selectMode && (
-                <button
-                  onClick={() => remove(m.id)}
-                  className="touch-44 absolute top-1 right-1 w-6 h-6 rounded-full bg-background/80 backdrop-blur flex items-center justify-center"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-              {!selectMode && m.type !== 'url' && (
-                <a
-                  href={m.url}
-                  download={m.name || 'file'}
-                  className="touch-44 absolute bottom-1 right-1 w-6 h-6 rounded-full bg-background/80 backdrop-blur flex items-center justify-center"
-                >
-                  <Download className="w-3 h-3" />
-                </a>
-              )}
+              {/* per-item delete/download buttons removed — selection mode
+                  (toolbar above) is now the only way to delete or download,
+                  so tapping a tile isn't cluttered with two overlay buttons
+                  on every single item. */}
               {allowCaption && !selectMode && (
                 <input
                   value={m.caption || ''}
@@ -177,7 +209,13 @@ export default function MediaUploader({ media = [], onChange, allowUrl = false, 
           onClick={() => imageRef.current?.click()}
           className="touch-44 flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border-2 border-dashed border-border text-xs font-medium lowercase text-muted-foreground"
         >
-          <Upload className="w-4 h-4" /> add photos
+          <ImageIcon className="w-4 h-4" /> add photos
+        </button>
+        <button
+          onClick={() => videoRef.current?.click()}
+          className="touch-44 flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border-2 border-dashed border-border text-xs font-medium lowercase text-muted-foreground"
+        >
+          <VideoIcon className="w-4 h-4" /> add videos
         </button>
         <button
           onClick={() => anyFileRef.current?.click()}
@@ -186,6 +224,7 @@ export default function MediaUploader({ media = [], onChange, allowUrl = false, 
           <Upload className="w-4 h-4" /> add files
         </button>
         <input ref={imageRef} type="file" multiple accept="image/*" onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} className="hidden" />
+        <input ref={videoRef} type="file" multiple accept="video/*" onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} className="hidden" />
         <input ref={anyFileRef} type="file" multiple onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} className="hidden" />
       </div>
 

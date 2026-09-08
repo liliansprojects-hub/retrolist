@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
@@ -52,6 +53,30 @@ const AuthenticatedApp = () => {
 };
 
 function App() {
+  useEffect(() => {
+    // one-time: the first real tap anywhere in the app unlocks audio +
+    // vibration for the rest of the session (see primeAudio's comment) —
+    // without this, alarms fired later from a background timer produce no
+    // sound or vibration at all, even with everything else configured right.
+    let primed = false;
+    const prime = () => {
+      if (primed) return;
+      primed = true;
+      import('@/lib/alarmAudio').then(({ primeAudio }) => primeAudio());
+      window.removeEventListener('pointerdown', prime);
+    };
+    window.addEventListener('pointerdown', prime);
+
+    // ask for notification permission early (once) rather than only ever
+    // passively checking Notification.permission === 'granted' — without an
+    // explicit request the browser default is usually "default" (never
+    // asked), so notifications never had a chance to be allowed at all.
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+
+    return () => window.removeEventListener('pointerdown', prime);
+  }, []);
 
   return (
     <AuthProvider>

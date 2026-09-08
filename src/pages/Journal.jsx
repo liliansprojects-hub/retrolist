@@ -150,7 +150,11 @@ export default function Journal() {
               className={cn(
                 'touch-44 aspect-square rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-colors relative overflow-hidden',
                 !inMonth && 'opacity-30',
-                !photoEntry?.photo && (periodDay || selected ? 'bg-foreground text-background' : 'bg-muted/50'),
+                !photoEntry?.photo && (
+                  selected ? 'bg-foreground text-background'
+                  : periodDay ? 'bg-foreground/60 text-background'
+                  : 'bg-muted/50'
+                ),
                 today && !selected && 'ring-1 ring-foreground'
               )}
               style={photoEntry?.photo ? {

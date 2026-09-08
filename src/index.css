@@ -4,6 +4,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* backup for browsers that ignore user-scalable=no in the viewport meta tag */
+html, body {
+  touch-action: pan-x pan-y;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

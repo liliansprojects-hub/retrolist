@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Trash2, Share2, FolderInput, Copy, ChevronLeft, Check, PanelLeft, PanelRight, Square, RectangleVertical } from 'lucide-react';
 import ColorPicker from './ColorPicker';
 import MediaUploader from './MediaUploader';
@@ -81,6 +81,28 @@ export default function ItemEditor({ item, folderType, onClose, onSave, onDelete
 
   const draft = { text, subheading, year, date, reps, times, amount, notes: notes, body: notes, color, url, media, done, kind, style, itemHeight };
 
+  // this editor previously only wrote anything on an explicit "save" tap —
+  // fine when the user reliably reaches that button, but if the app gets
+  // backgrounded/closed offline before they do (very easy to do — switching
+  // apps, phone locking, the OS reclaiming a backgrounded tab), every edit
+  // was silently discarded, matching the exact bug reported. autosave every
+  // change (debounced) for existing items so nothing depends on the save
+  // button actually being pressed; brand-new items are untouched here since
+  // they don't exist in storage yet until the first real save anyway.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const autosaveTimer = useRef(null);
+  const skipFirst = useRef(true);
+  useEffect(() => {
+    if (item.__isNew) return;
+    if (skipFirst.current) { skipFirst.current = false; return; }
+    clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(() => onSave(draftRef.current), 400);
+    return () => clearTimeout(autosaveTimer.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, subheading, year, date, reps, times, amount, notes, color, url, media, done, style, itemHeight]);
+  useEffect(() => () => clearTimeout(autosaveTimer.current), []);
+
   // move/copy is deferred until "save" is pressed — the chosen target is held
   // here and applied after the draft is persisted, so the moved/copied version
   // carries the latest contents.
@@ -92,9 +114,10 @@ export default function ItemEditor({ item, folderType, onClose, onSave, onDelete
     }
     onClose();
   };
-  // a brand-new item is only persisted once "save" is pressed — cancelling
-  // (backdrop / back) always removes it; for existing items, cancel keeps the
-  // original (unsaved edits are discarded).
+  // NOTE: edits to an existing item now autosave as you type (see the
+  // effect above), so "cancel" only closes the screen — it no longer
+  // discards changes, since the whole point is that nothing should be lost
+  // by not pressing an explicit save button.
   const cancel = () => { if (item.__isNew) onDelete(); else onClose(); };
 
   return (

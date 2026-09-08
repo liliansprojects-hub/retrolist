@@ -3,6 +3,7 @@
 import { getCustomTracks } from '@/lib/store';
 
 export const SOUNDS = [
+  { id: 'none', label: 'off' },
   { id: 'classic', label: 'classic' },
   { id: 'chime', label: 'chime' },
   { id: 'beep', label: 'beep' },
@@ -90,6 +91,7 @@ function stopTrack() {
 
 export function startSound(soundId) {
   stopSound();
+  if (soundId === 'none') return;
   if (isCustomTrack(soundId)) { startTrack(getTrackUrl(soundId)); return; }
   const c = ctx();
   if (!c) return;
@@ -126,4 +128,20 @@ export function preview(soundId, pattern) {
 export function stopAll() {
   stopSound();
   stopVibrate();
+}
+
+// browsers block audio/vibration from ever starting unless they've been
+// triggered by a real user gesture at least once in the page's lifetime —
+// an alarm firing later from a background setInterval tick is NOT a user
+// gesture, so without this, the very first sound/vibration attempt (and
+// every one after, since the AudioContext never left 'suspended') silently
+// does nothing. call this from a one-time pointerdown listener as early as
+// possible in the app so the context is already warmed up by the time any
+// alarm actually needs to fire.
+export function primeAudio() {
+  try {
+    const c = ctx();
+    if (c && c.state === 'suspended') c.resume().catch(() => {});
+  } catch {}
+  try { if (navigator.vibrate) navigator.vibrate(0); } catch {}
 }

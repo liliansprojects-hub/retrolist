@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Plus, Share2, Pencil, Pin, Link as LinkIcon, FolderInput, Copy, ListPlus, Folder as FolderIcon, CheckSquare, List, Star, MapPin, Bell, StickyNote, Palette, Repeat, Calendar, Book, Film, Map as MapIcon, BookHeart, Images, X } from 'lucide-react';
 import {
-  getFolder, getFolders, getChildFolders, addItem, updateItem, deleteItem, moveItem, copyItem, moveFolder, copyFolder, addFolder, updateFolder, reorderChecklist, reorderItemsByIndex, reorderChildFoldersByIndex, LIST_TYPES,
+  getFolder, getFolders, getChildFolders, addItem, updateItem, deleteItem, moveItem, copyItem, moveFolder, copyFolder, addFolder, updateFolder, deleteFolder, reorderChecklist, reorderItemsByIndex, reorderChildFoldersByIndex, LIST_TYPES,
 } from '@/lib/store';
 import AlbumView from '@/components/AlbumView';
 import FolderEditModal from '@/components/FolderEditModal';
@@ -45,6 +45,7 @@ export default function FolderDetail() {
   const refresh = () => setFolder(getFolder(id));
 
   const [subtitle, setSubtitle] = useState(folder?.subtitle || '');
+  const subtitleTimer = useRef(null);
   useEffect(() => { setSubtitle(folder?.subtitle || ''); }, [folder?.id, folder?.subtitle]);
 
   const handleAdd = () => {
@@ -189,7 +190,12 @@ export default function FolderDetail() {
         <h1 className="text-2xl font-extrabold lowercase tracking-tight">{folder.name}</h1>
         <input
           value={subtitle}
-          onChange={(e) => setSubtitle(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setSubtitle(v);
+            clearTimeout(subtitleTimer.current);
+            subtitleTimer.current = setTimeout(() => updateFolder(id, { subtitle: v }), 400);
+          }}
           onBlur={() => updateFolder(id, { subtitle })}
           placeholder="add a subheading…"
           className="mt-1 w-full bg-transparent text-sm text-muted-foreground lowercase outline-none selectable"
@@ -255,6 +261,7 @@ export default function FolderDetail() {
         folder={folder}
         onClose={() => setEditOpen(false)}
         onSave={handleUpdateFolder}
+        onDelete={() => { deleteFolder(folder.id); setEditOpen(false); navigate('/'); }}
       />
       <FolderEditModal
         open={!!childType}
@@ -334,12 +341,23 @@ function NoteEditor({ folder, onUpdate }) {
     if (u) window.open(u, '_blank', 'noopener,noreferrer');
   };
   const save = () => onUpdate({ body, url: url.trim() });
+  const saveTimer = useRef(null);
+  // onBlur-only saving loses any edit made right before the app gets
+  // backgrounded or closed (very common offline, when there's no focus-loss
+  // moment triggering it) — debounced autosave on every keystroke means the
+  // change is persisted almost immediately regardless of whether blur ever
+  // fires, with onBlur kept as an instant final flush.
+  const scheduleSave = (nextBody, nextUrl) => {
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => onUpdate({ body: nextBody, url: (nextUrl ?? url).trim() }), 400);
+  };
+  useEffect(() => () => clearTimeout(saveTimer.current), []);
 
   return (
     <div className="space-y-3">
       <textarea
         value={body}
-        onChange={(e) => setBody(e.target.value)}
+        onChange={(e) => { const v = e.target.value; setBody(v); scheduleSave(v, url); }}
         onBlur={save}
         placeholder="write your note..."
         className="w-full min-h-[300px] p-4 rounded-2xl bg-muted/50 text-sm outline-none resize-none selectable"
@@ -349,7 +367,7 @@ function NoteEditor({ folder, onUpdate }) {
         <div className="flex gap-2">
           <input
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => { const v = e.target.value; setUrl(v); scheduleSave(body, v); }}
             onBlur={save}
             placeholder="https://..."
             className="flex-1 px-3 py-2.5 rounded-xl bg-muted text-sm outline-none"

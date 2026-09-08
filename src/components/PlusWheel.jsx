@@ -46,18 +46,48 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
       </div>
     ));
 
-  const useRadial = vp.w >= 600 && vp.h >= 520;
-  const outerR = Math.min(vp.w * 0.30, vp.h * 0.32, 210);
-  const innerR = outerR * 0.6;
+  // was 600x520 — bigger than nearly every phone in portrait, so the radial
+  // wheel never actually activated and always fell back to the plain sheet.
+  // lowered to fit real phone screens; the geometry below already scales
+  // (and further splits into two loops per ring) to whatever room is left.
+  const useRadial = vp.w >= 320 && vp.h >= 480;
+  const pad = 48;
+  // leave a safety margin (pad + half a button) so the wheel never touches
+  // or goes past the screen edge, in either dimension.
+  const maxR = Math.max(60, Math.min(vp.w, vp.h) / 2 - pad - 24);
+  const outerR = Math.min(vp.w * 0.30, vp.h * 0.32, 210, maxR);
+  const innerR = outerR * 0.55;
   const listOpts = groups[0]?.items || [];
   const itemOpts = groups[1]?.items || [];
   // size each ring's buttons to fit its circumference so nothing overlaps and
   // every option stays tappable (shrinks only when there isn't room for 44px).
-  const fitBtn = (R, n) => Math.max(28, Math.min(44, Math.floor((2 * Math.PI * R) / Math.max(1, n)) - 4));
-  const innerBtn = fitBtn(innerR, listOpts.length);
-  const outerBtn = fitBtn(outerR, itemOpts.length);
+  const fitBtn = (R, n) => Math.max(26, Math.min(44, Math.floor((2 * Math.PI * R) / Math.max(1, n)) - 4));
 
-  const ring = (opts, R, gIdx, btn) =>
+  // if a ring would get too crowded on a single circle, split it into two
+  // concentric loops of the same category instead of cramming every icon
+  // onto one ring — same category, just an inner/outer sub-ring pair.
+  const SPLIT_AT = 7;
+  const splitRing = (opts, R, gIdx) => {
+    if (opts.length <= SPLIT_AT) {
+      const btn = fitBtn(R, opts.length);
+      return renderRing(opts, R, gIdx, btn);
+    }
+    const half = Math.ceil(opts.length / 2);
+    const a = opts.slice(0, half);
+    const b = opts.slice(half);
+    const rA = R * 0.8;
+    const rB = R * 1.2;
+    const btnA = fitBtn(rA, a.length);
+    const btnB = fitBtn(rB, b.length);
+    return (
+      <>
+        {renderRing(a, rA, gIdx, btnA)}
+        {renderRing(b, rB, gIdx, btnB)}
+      </>
+    );
+  };
+
+  const renderRing = (opts, R, gIdx, btn) =>
     opts.map((item, i) => {
       const a = (i / opts.length) * 2 * Math.PI - Math.PI / 2;
       const x = Math.cos(a) * R;
@@ -95,10 +125,9 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
             <div className="absolute inset-0 flex items-center justify-center" onClick={close}>
               <div className="relative" style={{ width: 1, height: 1 }} onClick={(e) => e.stopPropagation()}>
                 {(() => {
-                   const pad = 48;
                    const cx = outerR + pad, cy = outerR + pad;
-                   const innerLabelR = innerR + innerBtn / 2 + 12;
-                   const outerLabelR = outerR + outerBtn / 2 + 12;
+                   const innerLabelR = innerR * 1.2 + 30;
+                   const outerLabelR = outerR * 1.2 + 30;
                   const arc = (r) => `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`;
                   return (
                     <svg className="absolute pointer-events-none" style={{ left: -(outerR + pad), top: -(outerR + pad), width: 2 * (outerR + pad), height: 2 * (outerR + pad) }} viewBox={`0 0 ${2 * (outerR + pad)} ${2 * (outerR + pad)}`}>
@@ -118,8 +147,8 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
                 <button onClick={close} className="touch-44 absolute w-12 h-12 rounded-full bg-foreground text-background flex items-center justify-center shadow-lg z-10" style={{ left: -24, top: -24 }}>
                   <X className="w-5 h-5" />
                 </button>
-                {ring(listOpts, innerR, 0, innerBtn)}
-                {ring(itemOpts, outerR, 1, outerBtn)}
+                {splitRing(listOpts, innerR, 0)}
+                {splitRing(itemOpts, outerR, 1)}
               </div>
             </div>
           ) : (
