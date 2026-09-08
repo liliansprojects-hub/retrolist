@@ -1,0 +1,155 @@
+{
+  "background_color": "#000000",
+  "dir": "ltr",
+  "display": "standalone",
+  "name": "retrolist",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "short_name": "retrolist",
+  "start_url": "/",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "https://db.com/logo_v2.svg",
+      "type": "image/svg+xml",
+      "isSquare": false,
+      "isPng": false,
+      "isWebp": false,
+      "isJpg": false,
+      "width": 0,
+      "is512x512": false,
+      "is256x256": false,
+      "is192x192": false
+    },
+    {
+      "src": "https://retrolist.netlify.app/favicon.ico",
+      "type": "image/x-icon",
+      "isSquare": false,
+      "isPng": false,
+      "isWebp": false,
+      "isJpg": false,
+      "width": 0,
+      "is512x512": false,
+      "is256x256": false,
+      "is192x192": false
+    }
+  ],
+  "id": "retrolist",
+  "description": "A place to store all of your thoughts. Organize your lists, journals, maps, notes all in one app. Retrolist is a digital pinboard that blends your daily tasks with your personal aesthetic.",
+  "lang": "en",
+  "related_applications": [
+    {
+      "platform": "play",
+      "url": "play.google.com/store/apps/details?id=com.pinterest",
+      "id": "com.pinterest"
+    },
+    {
+      "platform": "itunes",
+      "url": "apps.apple.com/us/app/pinterest/id429047995",
+      "id": "429047995"
+    },
+    {
+      "platform": "play",
+      "url": "play.google.com/store/apps/details?id=com.goodnotes.android.app",
+      "id": "com.goodnotes.android.app"
+    },
+    {
+      "platform": "itunes",
+      "url": "apps.apple.com/us/app/goodnotes-ai-notes-docs-pdf/id1444383602",
+      "id": "1444383602"
+    },
+    {
+      "platform": "itunes",
+      "url": "apps.apple.com/us/app/google-maps/id585027354",
+      "id": "585027354"
+    },
+    {
+      "platform": "play",
+      "url": "play.google.com/store/apps/details?id=com.google.android.apps.maps",
+      "id": "com.google.android.apps.maps"
+    },
+    {
+      "platform": "play",
+      "url": "play.google.com/store/apps/details?id=com.goodreads",
+      "id": "com.goodreads"
+    },
+    {
+      "platform": "itunes",
+      "url": "apps.apple.com/us/app/goodreads-book-tracker-more/id355833469",
+      "id": "355833469"
+    },
+    {
+      "platform": "play",
+      "url": "play.google.com/store/apps/details?id=io.lonepalm.retro",
+      "id": "io.lonepalm.retro"
+    },
+    {
+      "platform": "itunes",
+      "url": "apps.apple.com/us/app/retro-social-photo-journal/id6443709020",
+      "id": "6443709020"
+    },
+    {
+      "platform": "play",
+      "url": "play.google.com/store/apps/details?id=com.microsoft.office.onenote",
+      "id": "com.microsoft.office.onenote"
+    },
+    {
+      "platform": "itunes",
+      "url": "apps.apple.com/us/app/microsoft-onenote/id410395246",
+      "id": "410395246"
+    },
+    {
+      "platform": "play",
+      "url": "play.google.com/store/apps/details?id=notion.id",
+      "id": "notion.id"
+    },
+    {
+      "platform": "itunes",
+      "url": "apps.apple.com/us/app/notion-notes-docs-tasks/id1232780281",
+      "id": "1232780281"
+    },
+    {
+      "platform": "play",
+      "url": "play.google.com/store/apps/details?id=md.obsidian",
+      "id": "md.obsidian"
+    },
+    {
+      "platform": "itunes",
+      "url": "apps.apple.com/us/app/obsidian-connected-notes/id1557175442",
+      "id": "1557175442"
+    },
+    {
+      "platform": "windows",
+      "url": "apps.microsoft.com/detail/xp8k51fr765rld",
+      "id": "xp8k51fr765rld"
+    },
+    {
+      "platform": "windows",
+      "url": "apps.microsoft.com/detail/9nblggh5r558",
+      "id": "9nblggh5r558"
+    }
+  ],
+  "categories": [
+    "books",
+    "books &amp; reference",
+    "design",
+    "entertainment",
+    "events",
+    "finance",
+    "fitness",
+    "food",
+    "graphics",
+    "graphics &amp; design",
+    "health",
+    "lifestyle",
+    "navigation",
+    "personalization",
+    "photo &amp; video",
+    "productivity",
+    "reference",
+    "shopping",
+    "social",
+    "social networking",
+    "travel"
+  ]
+}
