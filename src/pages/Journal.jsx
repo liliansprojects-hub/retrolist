@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ChevronLeft, ChevronRight, Plus, X, Droplet, MapPin, Trash2, Pencil,
 } from 'lucide-react';
@@ -10,6 +10,7 @@ import {
 import {
   getJournal, addJournalEntry, updateJournalEntry, deleteJournalEntry,
   getEvents, getPeriodData, addPeriodEntry, deletePeriodEntry, getMapFolders, getSettings,
+  getJournalDraft, setJournalDraft, clearJournalDraft,
 } from '@/lib/store';
 import ColorPicker from '@/components/ColorPicker';
 import ImageUpload from '@/components/ImageUpload';
@@ -222,9 +223,22 @@ function DayDetail({ date, onRefresh, periodEnabled }) {
     setMapPlaces(getMapFolders().flatMap((f) => f.places || []));
   };
 
+  const [restoredDraft, setRestoredDraft] = useState(null);
+
   useEffect(() => {
     load();
-    setEditing(null);
+    // a draft left unsaved (on this exact day) survives navigation and app
+    // close — reopen the editor with it instead of discarding, so nothing
+    // typed is ever lost until the user explicitly saves or deletes it.
+    const draft = getJournalDraft();
+    if (draft && draft.dateStr === dateStr) {
+      setRestoredDraft(draft);
+      setEditing(draft.entryId ? { id: draft.entryId } : 'new');
+    } else {
+      setRestoredDraft(null);
+      setEditing(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateStr]);
 
   const togglePeriod = () => {
@@ -241,16 +255,19 @@ function DayDetail({ date, onRefresh, periodEnabled }) {
     return (
       <EntryEditor
         dateStr={dateStr}
-        entry={editing === 'new' ? null : editing}
+        entry={editing === 'new' ? null : entries.find((e) => e.id === editing.id) || editing}
+        initialDraft={restoredDraft}
         mapPlaces={mapPlaces}
         onSave={(data) => {
           if (editing === 'new') addJournalEntry({ ...data, date: dateStr });
           else updateJournalEntry(editing.id, data);
+          clearJournalDraft();
+          setRestoredDraft(null);
           setEditing(null);
           onRefresh();
           load();
         }}
-        onDelete={(id) => { if (id) deleteJournalEntry(id); setEditing(null); onRefresh(); load(); }}
+        onDelete={(id) => { if (id) deleteJournalEntry(id); clearJournalDraft(); setRestoredDraft(null); setEditing(null); onRefresh(); load(); }}
         onCancel={() => setEditing(null)}
       />
     );
@@ -299,7 +316,7 @@ function DayDetail({ date, onRefresh, periodEnabled }) {
           {entries.map((e) => (
             <button
               key={e.id}
-              onClick={() => setEditing(e)}
+              onClick={() => { setRestoredDraft(null); setEditing(e); }}
               className="w-full text-left rounded-2xl border border-border p-3 active:scale-[0.98] transition-transform"
               style={{ borderLeftWidth: '3px', borderLeftColor: e.color || '#f59e0b' }}
             >
@@ -324,7 +341,7 @@ function DayDetail({ date, onRefresh, periodEnabled }) {
       )}
 
       <button
-        onClick={() => setEditing('new')}
+        onClick={() => { setRestoredDraft(null); setEditing('new'); }}
         className="touch-44 w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-dashed border-border text-sm font-medium lowercase text-muted-foreground"
       >
         <Plus className="w-4 h-4" /> add entry
@@ -333,15 +350,32 @@ function DayDetail({ date, onRefresh, periodEnabled }) {
   );
 }
 
-function EntryEditor({ dateStr, entry, mapPlaces, onSave, onDelete, onCancel }) {
-  const [title, setTitle] = useState(entry?.title || '');
-  const [content, setContent] = useState(entry?.content || '');
-  const [color, setColor] = useState(entry?.color || '#f59e0b');
-  const [mood, setMood] = useState(entry?.mood || '');
-  const [photo, setPhoto] = useState(entry?.photo || null);
+function EntryEditor({ dateStr, entry, initialDraft, mapPlaces, onSave, onDelete, onCancel }) {
+  const [title, setTitle] = useState(initialDraft?.title ?? entry?.title ?? '');
+  const [content, setContent] = useState(initialDraft?.content ?? entry?.content ?? '');
+  const [color, setColor] = useState(initialDraft?.color ?? entry?.color ?? '#f59e0b');
+  const [mood, setMood] = useState(initialDraft?.mood ?? entry?.mood ?? '');
+  const [photo, setPhoto] = useState(initialDraft?.photo ?? entry?.photo ?? null);
   const [showPlaces, setShowPlaces] = useState(false);
 
   const handleSave = () => onSave({ title, content, color, mood, photo });
+
+  // autosave every change (debounced) into a standalone draft, independent
+  // of the real journal entry — this is what lets an unsaved entry survive
+  // navigating away and even fully closing the app, restored by DayDetail
+  // above until the user explicitly saves or deletes it.
+  const draftTimer = useRef(null);
+  const skipFirst = useRef(true);
+  useEffect(() => {
+    if (skipFirst.current) { skipFirst.current = false; return; }
+    clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      setJournalDraft({ dateStr, entryId: entry?.id || null, title, content, color, mood, photo });
+    }, 400);
+    return () => clearTimeout(draftTimer.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, content, color, mood, photo]);
+  useEffect(() => () => clearTimeout(draftTimer.current), []);
 
   const addPlaceToJournal = (place) => {
     const next = content + (content ? '\n' : '') + `📍 ${place.name}${place.address ? ' — ' + place.address : ''}`;

@@ -201,8 +201,8 @@ export default function Home() {
   })();
 
   return (
-    <div className="px-2 sm:px-3 pb-8 pt-2 min-h-screen">
-      <div className="sticky top-0 z-20 -mx-2 sm:-mx-3 px-2 sm:px-3 pb-4 safe-top bg-background/95 backdrop-blur-sm">
+    <div className="px-4 sm:px-5 pb-8 pt-2 min-h-screen">
+      <div className="sticky top-0 z-20 -mx-4 sm:-mx-5 px-4 sm:px-5 pb-4 safe-top bg-background/95 backdrop-blur-sm">
       <header className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-3xl font-extrabold lowercase tracking-tight">retrolist</h1>

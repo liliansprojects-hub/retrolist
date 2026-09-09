@@ -4,7 +4,6 @@ import { ChevronLeft, Check, Trash2, RotateCcw, FileText, AlertTriangle, Downloa
 import {
   getFileTrash, restoreFileTrash, purgeFileTrash, emptyFileTrash,
   getTrash, restoreFromTrash, purgeTrashItem, getFolder, updateFolder, addFile,
-  addFolder, addItem, getFolders,
 } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import PhotoViewer from '@/components/PhotoViewer';
@@ -47,16 +46,11 @@ export default function RecentlyDeleted() {
     if (it.bin === 'files') {
       const r = restoreFileTrash(it.id);
       if (r) {
-        // photos restore as an actual photo item (visible in the photos
-        // grid), not a generic file that only offers download/delete —
-        // matches how MyFiles.jsx's own restore already does this.
-        if (r.type === 'photo') {
-          let f = getFolders().find((x) => x.name === 'restored' && x.type === 'album');
-          if (!f) f = addFolder({ name: 'restored', type: 'album', size: 'square' });
-          addItem(f.id, { type: 'photo', url: r.url, name: 'photo' });
-        } else {
-          addFile({ name: r.name || 'file', url: r.url });
-        }
+        // photos restore flatly (type: 'photo', no folder) — getAllPhotos
+        // picks these up and shows them as real, viewable photos. earlier
+        // this created/reused a "restored" album folder on the main page,
+        // which was reported as unwanted — this no longer touches folders.
+        addFile(r.type === 'photo' ? { name: r.name || 'photo', url: r.url, type: 'photo' } : { name: r.name || 'file', url: r.url });
       }
     } else {
       const restored = restoreFromTrash(it.id);

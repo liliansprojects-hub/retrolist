@@ -192,6 +192,10 @@ export const copyFolder = (folderId, targetParentId) => {
 };
 
 // ── journal entries ──
+export const getJournalDraft = () => read('journal_draft', null);
+export const setJournalDraft = (draft) => write('journal_draft', draft);
+export const clearJournalDraft = () => write('journal_draft', null);
+
 export const getJournal = () => read('journal', []);
 export const saveJournal = (j) => write('journal', j);
 export const addJournalEntry = (entry) => {
@@ -451,6 +455,10 @@ export const getAllPhotos = () => {
   });
   const p = getProfile();
   if (p.avatar) photos.push({ url: p.avatar, source: 'avatar' });
+  // restored photos live flatly in `files` (type: 'photo') rather than being
+  // re-attached to any folder — they show up here as real photos instead of
+  // in the generic files list (see getAllFiles/MyFiles filtering below).
+  getAllFiles().forEach((f) => { if (f.type === 'photo' && f.url) photos.push({ url: f.url, source: f.source || 'restored', fileId: f.id }); });
   return photos;
 };
 
@@ -493,6 +501,10 @@ export const deletePhotoByUrl = (url) => {
   saveFolders(folders);
   const p = getProfile();
   if (p.avatar === url) saveProfile({ avatar: null });
+  // also strip any flat restored-photo entry with this url (see getAllPhotos)
+  const files = getAllFiles();
+  const stripped = files.filter((f) => !(f.type === 'photo' && f.url === url));
+  if (stripped.length !== files.length) saveFiles(stripped);
 };
 
 // ── album trash (recently deleted media, auto-purged after 15 days) ──

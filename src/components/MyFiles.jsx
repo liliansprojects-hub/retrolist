@@ -4,7 +4,7 @@ import { FileText, Link as LinkIcon, Trash2, Download, Check, ChevronDown, Chevr
 import {
   getAllPhotos, getAllUrls, getAllFiles, deletePhotoByUrl,
   getFileTrash, trashPhotoByUrl, trashFileById, restoreFileTrash, purgeFileTrash, emptyFileTrash,
-  addFile, addFolder, addItem, getFolders,
+  addFile,
 } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import PhotoViewer from './PhotoViewer';
@@ -31,7 +31,7 @@ export default function MyFiles() {
 
   const photos = getAllPhotos();
   const urls = getAllUrls();
-  const files = getAllFiles();
+  const files = getAllFiles().filter((f) => f.type !== 'photo');
   const trash = getFileTrash();
 
   const showPhotos = tab === 'all' || tab === 'photos';
@@ -62,13 +62,12 @@ export default function MyFiles() {
   };
 
   const restoreItem = (item) => {
-    if (item.type === 'file') {
-      addFile({ name: item.name || 'file', url: item.url });
-    } else {
-      let f = getFolders().find((x) => x.name === 'restored' && x.type === 'album');
-      if (!f) f = addFolder({ name: 'restored', type: 'album', size: 'square' });
-      addItem(f.id, { type: 'photo', url: item.url, name: 'photo' });
-    }
+    // restoring never creates or moves anything into a folder — a photo
+    // goes back as a real, viewable photo (flat, type: 'photo', picked up by
+    // getAllPhotos) and a file goes back as a plain file. previously this
+    // dropped photos into an auto-created "restored" album on the main page,
+    // which is exactly the behavior that was reported as wrong.
+    addFile(item.type === 'file' ? { name: item.name || 'file', url: item.url } : { name: item.name || 'photo', url: item.url, type: 'photo' });
     restoreFileTrash(item.id);
     setTick((t) => t + 1);
   };

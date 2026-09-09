@@ -337,7 +337,7 @@ export default function MasonryGrid({ folders, editMode, onResize, onReorder, on
   );
 
   return (
-    <div ref={ref} className="relative" style={{ height: totalH, marginLeft: -H_MARGIN, marginRight: -H_MARGIN }}>
+    <div ref={ref} className="relative" style={{ height: totalH, marginLeft: -H_MARGIN, marginRight: -H_MARGIN, touchAction: 'pan-x pan-y' }}>
       {placedM.map((p, i) => {
         const f = packItems[i];
         const full = foldersById[f.id] || f;
