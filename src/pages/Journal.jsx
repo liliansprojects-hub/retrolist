@@ -9,14 +9,27 @@ import {
 } from 'date-fns';
 import {
   getJournal, addJournalEntry, updateJournalEntry, deleteJournalEntry,
-  getEvents, getPeriodData, addPeriodEntry, deletePeriodEntry, getMapFolders, getSettings,
+  getEvents, addEvent, getPeriodData, addPeriodEntry, deletePeriodEntry, getMapFolders, getSettings,
   getJournalDraft, setJournalDraft, clearJournalDraft,
 } from '@/lib/store';
+import RecurringEventModal from '@/components/RecurringEventModal';
 import ColorPicker from '@/components/ColorPicker';
 import ImageUpload from '@/components/ImageUpload';
 import { cn } from '@/lib/utils';
+import { useTheme } from '@/lib/theme';
 
 const MOODS = ['✨', '🌱', '☀️', '🌧️', '🔥', '💫', '🌙', '🌊'];
+
+// backgroundColor + rgba alpha, not element opacity — opacity would also
+// fade the date number text, unlike the original bg-opacity-only look.
+function hexToRgba(hex, alpha) {
+  const h = (hex || '#1a1a1a').replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const r = parseInt(full.slice(0, 2), 16) || 0;
+  const g = parseInt(full.slice(2, 4), 16) || 0;
+  const b = parseInt(full.slice(4, 6), 16) || 0;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 export default function Journal() {
   const [month, setMonth] = useState(new Date());
@@ -25,6 +38,9 @@ export default function Journal() {
   const [events, setEvents] = useState([]);
   const [period, setPeriod] = useState([]);
   const [settings, setSettings] = useState(getSettings());
+  const [recurringOpen, setRecurringOpen] = useState(false);
+  const { accent } = useTheme();
+  const periodColor = settings.periodColor || accent;
 
   const refresh = () => {
     setEntries(getJournal());
@@ -77,10 +93,35 @@ export default function Journal() {
 
   return (
     <div className="safe-top px-6 sm:px-8 pb-4 min-h-screen">
-      <header className="mb-5">
-        <h1 className="text-3xl font-extrabold lowercase tracking-tight">journal</h1>
-        <p className="text-sm text-muted-foreground lowercase mt-0.5">your days, documented</p>
+      <header className="mb-5 flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-extrabold lowercase tracking-tight">journal</h1>
+          <p className="text-sm text-muted-foreground lowercase mt-0.5">your days, documented</p>
+        </div>
+        <button
+          onClick={() => setRecurringOpen(true)}
+          className="touch-44 w-10 h-10 rounded-full bg-foreground text-background flex items-center justify-center shadow-sm"
+          aria-label="add recurring event"
+        >
+          <Plus className="w-5 h-5" />
+        </button>
       </header>
+
+      <RecurringEventModal
+        open={recurringOpen}
+        onClose={() => setRecurringOpen(false)}
+        onSave={({ name, subheading, color, dates }) => {
+          // materialized, not a computed rule — each matching day gets its
+          // own real event entry sharing the same title/subheading/colour,
+          // so it shows up on every one of those days past, present, and
+          // future without depending on the existing single-event
+          // recurrence engine (which only ever looks forward from its
+          // start date, not backward).
+          dates.forEach((ds) => addEvent({ name, subheading, date: ds, recurrence: 'none', color }));
+          setRecurringOpen(false);
+          refresh();
+        }}
+      />
 
       {/* month + year filter (narrowed) */}
       <div className="flex items-center justify-between mb-4 gap-3">
@@ -153,11 +194,11 @@ export default function Journal() {
                 !inMonth && 'opacity-30',
                 !photoEntry?.photo && (
                   selected ? 'bg-foreground text-background'
-                  : periodDay ? 'bg-foreground/60 text-background'
-                  : 'bg-muted/50'
+                  : !periodDay && 'bg-muted/50'
                 ),
                 today && !selected && 'ring-1 ring-foreground'
               )}
+              style={!photoEntry?.photo && periodDay && !selected ? { backgroundColor: hexToRgba(periodColor, 0.6), color: 'hsl(var(--background))' } : undefined}
               style={photoEntry?.photo ? {
                 backgroundImage: `url(${photoEntry.photo})`,
                 backgroundSize: 'cover',
@@ -302,6 +343,7 @@ function DayDetail({ date, onRefresh, periodEnabled }) {
               <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold lowercase truncate">{e.name}</p>
+                {e.subheading && <p className="text-xs text-muted-foreground lowercase">{e.subheading}</p>}
                 {e.time && <p className="text-xs text-muted-foreground">{e.time}{e.place ? ` · ${e.place}` : ''}</p>}
                 {e.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{e.description}</p>}
               </div>

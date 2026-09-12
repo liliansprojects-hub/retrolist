@@ -30,6 +30,7 @@ export default function Settings() {
   const [settings, setSettings] = useState(getSettings());
   const [notifStatus, setNotifStatus] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported');
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [periodColorOpen, setPeriodColorOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [delStep, setDelStep] = useState(0);
   const [delPassword, setDelPassword] = useState('');
@@ -210,6 +211,15 @@ export default function Settings() {
               <span className={cn('absolute top-1 w-4 h-4 rounded-full bg-background transition-all', settings.periodTracking ? 'left-5' : 'left-1')} />
             </button>
           </div>
+          {settings.periodTracking && (
+            <button
+              onClick={() => setPeriodColorOpen(true)}
+              className="touch-44 mt-3 w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-muted/50"
+            >
+              <span className="text-xs font-medium lowercase text-muted-foreground">period colour</span>
+              <span className="w-6 h-6 rounded-full border border-border" style={{ backgroundColor: settings.periodColor || accent }} />
+            </button>
+          )}
         </div>
       </section>
 
@@ -381,6 +391,31 @@ export default function Settings() {
       />
 
       {/* delete confirmation (two-step: warning → password + confirm) */}
+      {periodColorOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          onClick={() => setPeriodColorOpen(false)}
+        >
+          <div className="absolute inset-0 bg-background/60 backdrop-blur-sm animate-fade-in" />
+          <div
+            className="relative w-full max-w-lg bg-card rounded-t-3xl sm:rounded-3xl border border-border p-5 pb-8 animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-sm font-semibold lowercase">period colour</h3>
+              <button onClick={() => updateSettings({ periodColor: null })} className="text-xs text-muted-foreground lowercase underline">
+                match theme
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground lowercase mb-3">defaults to your theme's accent colour — pick a custom one for period days instead.</p>
+            <ColorPicker value={settings.periodColor || accent} onChange={(c) => updateSettings({ periodColor: c })} label="period colour" />
+            <button onClick={() => setPeriodColorOpen(false)} className="touch-44 w-full mt-4 py-2.5 rounded-xl bg-foreground text-background text-sm font-medium lowercase">
+              done
+            </button>
+          </div>
+        </div>
+      )}
+
       {deleteOpen && (
         <div
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"

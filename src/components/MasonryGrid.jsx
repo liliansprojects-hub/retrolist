@@ -45,18 +45,45 @@ function parseRatio(r) {
 // one direction, refused to land between two blocks, or landed somewhere
 // unrelated to the drop point. with row-flow, order IS visual position by
 // construction, so there's nothing left to surprise the reorder logic.
+// row-flow, with one deliberately narrow exception: if the item just placed
+// left a gap directly beneath it (because an earlier, taller item in the
+// same row set the row's height), and the NEXT item in order fits in that
+// exact gap, stack it there instead of only ever starting a new row. this is
+// intentionally NOT a return to full skyline bin-packing (searching the
+// whole grid for the lowest open slot anywhere) — that's what caused
+// dragging to feel unpredictable before (see the comment above). this only
+// ever looks at the single gap under the immediately-previous item, so
+// order still maps directly to a predictable position.
 function packSkyline(items, containerW) {
   const W = Math.max(1, containerW);
   const placed = [];
   let x = 0, y = 0, rowH = 0;
+  let lastInRow = null; // { x, yInRow, w, h } of the previous item, for gap-fill checks
+
   for (const it of items) {
     const w = Math.max(MIN_W, Math.min(it.w, W));
+
+    // gap-fill: does this item fit in the space left under the previous one?
+    if (lastInRow) {
+      const gapH = rowH - lastInRow.h - GAP;
+      if (it.h <= gapH && w <= lastInRow.w) {
+        placed.push({ id: it.id, x: lastInRow.x, y: y + lastInRow.yInRow + lastInRow.h + GAP, w, h: it.h });
+        // this item didn't extend the row horizontally — the row's x cursor
+        // and height are unchanged, and it can't itself be gap-filled under
+        // again (keeps this to one level, not a recursive stack).
+        lastInRow = null;
+        continue;
+      }
+    }
+
     if (x > 0 && x + w > W + 0.5) {
       y += rowH + GAP;
       x = 0;
       rowH = 0;
+      lastInRow = null;
     }
     placed.push({ id: it.id, x, y, w, h: it.h });
+    lastInRow = { x, yInRow: 0, w, h: it.h };
     x += w + GAP;
     if (it.h > rowH) rowH = it.h;
   }

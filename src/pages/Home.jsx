@@ -73,9 +73,17 @@ export default function Home() {
     { label: 'map', value: 'map_folder', icon: MapIcon },
     { label: 'journal', value: 'journal', icon: BookHeart },
   ];
+  // the wheel's outer ring uses a small, curated subset of ALL_ITEM_KINDS —
+  // the full list (movie/series/drama, aspiration/role/programme/course,
+  // etc.) is still available via the in-folder "+" add-item picker
+  // (AddItemPicker, used in FolderDetail); cramming all 25 variants onto one
+  // ring is exactly what made it messy. picking one representative kind per
+  // concept keeps the ring small enough to fit without the crowding-related
+  // inner/outer sub-ring split ever needing to kick in.
+  const WHEEL_ITEM_KINDS = ['todo', 'list', 'note', 'movie', 'book', 'aspiration', 'hobby'];
   const wheelGroups = [
     { title: 'lists & folders', items: LIST_OPTIONS },
-    { title: 'items', items: ALL_ITEM_KINDS.map((it) => ({ label: it.label, value: it.kind, icon: it.icon })) },
+    { title: 'items', items: ALL_ITEM_KINDS.filter((it) => WHEEL_ITEM_KINDS.includes(it.kind)).map((it) => ({ label: it.kind === 'aspiration' ? 'aspiration' : it.label, value: it.kind, icon: it.icon })) },
   ];
   const ITEM_PARENT = { todo: 'todo', checklist: 'todo', list: 'list', note: 'list', movie: 'movie', series: 'movie', drama: 'movie', book: 'book', audiobook: 'book', magazine: 'book', article: 'book', aspiration: 'aspiration', role: 'aspiration', programme: 'aspiration', course: 'aspiration', exercise: 'habit', saving: 'habit', habit: 'habit', hobby: 'hobby', interest: 'hobby', sport: 'hobby', arts: 'hobby', language: 'hobby', skills: 'hobby', place: 'place' };
   const ITEM_KINDS = new Set(ALL_ITEM_KINDS.map((it) => it.kind));

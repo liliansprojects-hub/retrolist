@@ -67,13 +67,9 @@ function App() {
     };
     window.addEventListener('pointerdown', prime);
 
-    // ask for notification permission early (once) rather than only ever
-    // passively checking Notification.permission === 'granted' — without an
-    // explicit request the browser default is usually "default" (never
-    // asked), so notifications never had a chance to be allowed at all.
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {});
-    }
+    // notification permission is now requested contextually from
+    // AlarmModal (with an explanation of why, shown first) instead of
+    // blindly here on app load with no context for what it's for.
 
     return () => window.removeEventListener('pointerdown', prime);
   }, []);

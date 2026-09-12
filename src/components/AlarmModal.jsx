@@ -96,6 +96,12 @@ export default function AlarmModal({ open, onClose, onSave, onDelete, alarm }) {
 
   const handleSave = () => {
     if (!time) return;
+    // the browser's own permission dialog text can't be customized — so the
+    // explanation of *why* lives in our UI (the banner above the buttons),
+    // shown right before triggering the actual request here.
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
     onSave({
       name: (name || '').trim() || 'alarm',
       time,
@@ -143,6 +149,12 @@ export default function AlarmModal({ open, onClose, onSave, onDelete, alarm }) {
             <X className="w-5 h-5 text-muted-foreground" />
           </button>
         </div>
+
+        {'Notification' in window && Notification.permission !== 'granted' && (
+          <div className="mb-4 px-3 py-2.5 rounded-xl bg-muted/50 text-xs text-muted-foreground lowercase">
+            retrolist needs notification permission so this alarm can alert you — you'll be asked to allow it when you save.
+          </div>
+        )}
 
         <div className="space-y-4">
           <TimePicker value={time} onChange={setTime} format={format} />

@@ -100,22 +100,6 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
       );
     });
 
-  const isDesktop = vp.w >= 900;
-
-  // ---- MOBILE: two separate full circles stacked vertically, one per
-  // category, instead of cramming both as concentric rings sharing one
-  // center. each circle gets its own inner/outer split if it's crowded, and
-  // both use the same start angle so they're visually symmetrical.
-  const mSide = 28, mTop = 90, mBottom = 130, mGap = 28;
-  const mR = Math.max(70, Math.min(160,
-    (vp.w - 2 * mSide) / 2,
-    (vp.h - mTop - mBottom - mGap) / 4
-  ));
-  const mCx = vp.w / 2;
-  const mCyBottom = vp.h - mBottom - mR; // "items" circle
-  const mCyTop = mCyBottom - 2 * mR - mGap; // "lists" circle
-  const mCloseY = (mCyTop + mR + mCyBottom - mR) / 2;
-
   return (
     <>
       {(!open || !wheelMode) && (
@@ -137,8 +121,9 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
         <div className="fixed inset-0 z-40 flex items-end justify-center" onClick={close}>
           <div className="absolute inset-0 bg-background/60 backdrop-blur-sm animate-fade-in" />
 
-          {wheelMode && useRadial && isDesktop ? (
-            // ---- DESKTOP: original single-wheel, two-concentric-ring design, unchanged.
+          {wheelMode && useRadial ? (
+            // single wheel, two concentric rings (lists inside, items outside)
+            // sharing one center, with curved centred labels for each ring.
             <div className="absolute inset-0 flex items-center justify-center" onClick={close}>
               <div className="relative" style={{ width: 1, height: 1 }} onClick={(e) => e.stopPropagation()}>
                 {(() => {
@@ -167,21 +152,6 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
                 {splitRing(listOpts, innerR, 0)}
                 {splitRing(itemOpts, outerR, 1)}
               </div>
-            </div>
-          ) : wheelMode && useRadial ? (
-            // ---- MOBILE: two full, separate, non-overlapping circles.
-            <div className="absolute inset-0" onClick={close}>
-              <div className="fixed" style={{ left: mCx, top: mCyTop, width: 1, height: 1 }} onClick={(e) => e.stopPropagation()}>
-                <span className="absolute text-[9px] tracking-widest lowercase text-muted-foreground" style={{ left: -20, top: -mR - 22, width: 40, textAlign: 'center' }}>lists</span>
-                {splitRing(listOpts, mR, 0)}
-              </div>
-              <div className="fixed" style={{ left: mCx, top: mCyBottom, width: 1, height: 1 }} onClick={(e) => e.stopPropagation()}>
-                <span className="absolute text-[9px] tracking-widest lowercase text-muted-foreground" style={{ left: -20, top: mR + 10, width: 40, textAlign: 'center' }}>items</span>
-                {splitRing(itemOpts, mR, 1)}
-              </div>
-              <button onClick={close} className="touch-44 fixed w-12 h-12 rounded-full bg-foreground text-background flex items-center justify-center shadow-lg z-10" style={{ left: mCx - 24, top: mCloseY - 24 }} onClickCapture={(e) => e.stopPropagation()}>
-                <X className="w-5 h-5" />
-              </button>
             </div>
           ) : (
             <div className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto no-scrollbar bg-card rounded-t-3xl border-t border-border p-5 pb-12 animate-slide-up" onClick={(e) => e.stopPropagation()}>

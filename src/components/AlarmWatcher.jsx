@@ -7,7 +7,6 @@ import { getAccentIcon } from '@/lib/notifIcon';
 
 export default function AlarmWatcher() {
   const [fired, setFired] = useState(null);
-  const lastFired = useRef({});
   const snoozeTimers = useRef([]);
 
   const fire = (alarm) => {
@@ -31,32 +30,81 @@ export default function AlarmWatcher() {
     }
   };
 
-  useEffect(() => {
-    const tick = () => {
-      const now = new Date();
-      const minuteKey = (a) => a.id + ':' + now.toDateString() + ':' + a.time;
-      let alarms = [];
-      try { alarms = getAlarms(); } catch { return; }
-      alarms.forEach((a) => {
-        if (!a.enabled) return;
-        const pt = parseTime(a.time);
-        if (!pt) return;
-        if (now.getHours() !== pt.h || now.getMinutes() !== pt.m) return;
-        if (a.days && a.days.length) {
-          if (!a.days.includes(now.getDay())) return;
-        } else if (a.date) {
-          const ds = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-          if (a.date !== ds) return;
-        }
-        const k = minuteKey(a);
-        if (lastFired.current[k]) return;
-        lastFired.current[k] = true;
+  // ---- scheduling ----
+  // the previous version polled every 5s and only fired on an EXACT
+  // current-minute match. once a tab is backgrounded, Chrome throttles
+  // setInterval heavily (often to ~once/minute or less) — so the poll could
+  // easily land just outside the matching minute and silently skip the
+  // alarm entirely for that day. scheduling one precise setTimeout per
+  // alarm's exact next-fire time avoids that "did we happen to poll during
+  // the right 60-second window" problem: even if a backgrounded tab delays
+  // the timeout, it still eventually fires, rather than being skippable.
+  // this is still best-effort — if the browser/OS fully suspends or kills
+  // the tab's process while backgrounded, no web-based timer can survive
+  // that; there is no way around that with web technology alone.
+  const timers = useRef({});
+
+  const nextOccurrence = (a) => {
+    const pt = parseTime(a.time);
+    if (!pt) return null;
+    const now = new Date();
+    if (a.days && a.days.length) {
+      for (let add = 0; add < 8; add++) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + add);
+        d.setHours(pt.h, pt.m, 0, 0);
+        if (a.days.includes(d.getDay()) && d.getTime() > now.getTime() - 1000) return d;
+      }
+      return null;
+    }
+    if (a.date) {
+      const [y, mo, da] = a.date.split('-').map(Number);
+      const d = new Date(y, mo - 1, da, pt.h, pt.m, 0, 0);
+      return d.getTime() > now.getTime() - 1000 ? d : null;
+    }
+    const d = new Date(now);
+    d.setHours(pt.h, pt.m, 0, 0);
+    if (d.getTime() <= now.getTime() - 1000) d.setDate(d.getDate() + 1);
+    return d;
+  };
+
+  const scheduleAll = () => {
+    Object.values(timers.current).forEach(clearTimeout);
+    timers.current = {};
+    let alarms = [];
+    try { alarms = getAlarms(); } catch { return; }
+    alarms.forEach((a) => {
+      if (!a.enabled) return;
+      const next = nextOccurrence(a);
+      if (!next) return;
+      const delay = Math.max(0, next.getTime() - Date.now());
+      // cap at ~24h so very-far-out alarms still get re-evaluated daily
+      // rather than relying on a single multi-day setTimeout to survive.
+      const capped = Math.min(delay, 24 * 60 * 60 * 1000);
+      timers.current[a.id] = setTimeout(() => {
+        if (delay > capped) { scheduleAll(); return; }
         fire(a);
-      });
+        scheduleAll();
+      }, capped);
+    });
+  };
+
+  useEffect(() => {
+    scheduleAll();
+    // safety net: recheck the moment the app becomes visible/focused again —
+    // catches anything that should have fired while backgrounded/suspended.
+    const recheck = () => { if (document.visibilityState === 'visible') scheduleAll(); };
+    document.addEventListener('visibilitychange', recheck);
+    window.addEventListener('focus', recheck);
+    // lighter periodic backup poll (belt-and-suspenders alongside the
+    // precise per-alarm timers above)
+    const poll = setInterval(scheduleAll, 60000);
+    return () => {
+      document.removeEventListener('visibilitychange', recheck);
+      window.removeEventListener('focus', recheck);
+      clearInterval(poll);
+      Object.values(timers.current).forEach(clearTimeout);
     };
-    const id = setInterval(tick, 5000);
-    tick();
-    return () => clearInterval(id);
   }, []);
 
   const dismiss = () => { stopAll(); setFired(null); };
