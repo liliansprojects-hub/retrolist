@@ -73,6 +73,13 @@ export default function Home() {
     { label: 'map', value: 'map_folder', icon: MapIcon },
     { label: 'journal', value: 'journal', icon: BookHeart },
   ];
+  // the wheel's inner ring uses a small, curated subset too — every folder
+  // TYPE is still fully reachable regardless, since FolderEditModal has its
+  // own complete type picker inside it (tapping any wheel option just sets
+  // the modal's *starting* type, which can be changed to anything there) —
+  // so trimming what's on the ring itself doesn't remove any capability.
+  const WHEEL_LIST_VALUES = ['folder', 'todo', 'list', 'note', 'album', 'reminder', 'journal'];
+  const WHEEL_LIST_OPTIONS = LIST_OPTIONS.filter((o) => WHEEL_LIST_VALUES.includes(o.value));
   // the wheel's outer ring uses a small, curated subset of ALL_ITEM_KINDS —
   // the full list (movie/series/drama, aspiration/role/programme/course,
   // etc.) is still available via the in-folder "+" add-item picker
@@ -82,7 +89,7 @@ export default function Home() {
   // inner/outer sub-ring split ever needing to kick in.
   const WHEEL_ITEM_KINDS = ['todo', 'list', 'note', 'movie', 'book', 'aspiration', 'hobby'];
   const wheelGroups = [
-    { title: 'lists & folders', items: LIST_OPTIONS },
+    { title: 'lists & folders', items: WHEEL_LIST_OPTIONS },
     { title: 'items', items: ALL_ITEM_KINDS.filter((it) => WHEEL_ITEM_KINDS.includes(it.kind)).map((it) => ({ label: it.kind === 'aspiration' ? 'aspiration' : it.label, value: it.kind, icon: it.icon })) },
   ];
   const ITEM_PARENT = { todo: 'todo', checklist: 'todo', list: 'list', note: 'list', movie: 'movie', series: 'movie', drama: 'movie', book: 'book', audiobook: 'book', magazine: 'book', article: 'book', aspiration: 'aspiration', role: 'aspiration', programme: 'aspiration', course: 'aspiration', exercise: 'habit', saving: 'habit', habit: 'habit', hobby: 'hobby', interest: 'hobby', sport: 'hobby', arts: 'hobby', language: 'hobby', skills: 'hobby', place: 'place' };
