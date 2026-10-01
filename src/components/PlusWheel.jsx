@@ -66,7 +66,7 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
   // if a ring would get too crowded on a single circle, split it into two
   // concentric loops of the same category instead of cramming every icon
   // onto one ring — same category, just an inner/outer sub-ring pair.
-  const SPLIT_AT = 7;
+  const SPLIT_AT = 11;
   const splitRing = (opts, R, gIdx) => {
     if (opts.length <= SPLIT_AT) {
       const btn = fitBtn(R, opts.length);

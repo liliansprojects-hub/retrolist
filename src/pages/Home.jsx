@@ -87,7 +87,7 @@ export default function Home() {
   // ring is exactly what made it messy. picking one representative kind per
   // concept keeps the ring small enough to fit without the crowding-related
   // inner/outer sub-ring split ever needing to kick in.
-  const WHEEL_ITEM_KINDS = ['todo', 'list', 'note', 'movie', 'book', 'aspiration', 'hobby'];
+  const WHEEL_ITEM_KINDS = ['todo', 'checklist', 'list', 'note', 'movie', 'book', 'aspiration', 'habit', 'hobby', 'place'];
   const wheelGroups = [
     { title: 'lists & folders', items: WHEEL_LIST_OPTIONS },
     { title: 'items', items: ALL_ITEM_KINDS.filter((it) => WHEEL_ITEM_KINDS.includes(it.kind)).map((it) => ({ label: it.kind === 'aspiration' ? 'aspiration' : it.label, value: it.kind, icon: it.icon })) },

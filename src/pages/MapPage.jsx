@@ -8,6 +8,7 @@ import {
 import ImageUpload from '@/components/ImageUpload';
 import ColorPicker from '@/components/ColorPicker';
 import { useSync } from '@/lib/SyncContext';
+import { cn } from '@/lib/utils';
 import { WifiOff } from 'lucide-react';
 
 // NOTE ON THE MAP LIBRARY: this used to be react-leaflet. Leaflet's own
@@ -429,11 +430,17 @@ export default function MapPage() {
   }, [filterSignal, mapSize.w, mapSize.h, mappedPlaces.length]);
 
   // zoom into a specific place whenever it's targeted (new place just
-  // created, or an existing one tapped in the list/on the map).
+  // located, or an existing one tapped in the list/on the map) — but rather
+  // than zooming in tight on just that one point, fit as many of the other
+  // visible pins into the same frame as possible, so locating a place
+  // doesn't hide everything else that was already on the map.
   useEffect(() => {
     if (flyTarget && flyTarget.lat) {
-      setCenter([flyTarget.lat, flyTarget.lng]);
-      setZoom((z) => Math.max(z, 15));
+      const others = mappedPlaces.filter((p) => p.lat != null && p.lng != null);
+      const points = [[flyTarget.lat, flyTarget.lng], ...others.map((p) => [p.lat, p.lng])];
+      const fit = fitPoints(points, mapSize.w, mapSize.h) || { center: [flyTarget.lat, flyTarget.lng], zoom: 15 };
+      setCenter(fit.center);
+      setZoom(fit.zoom);
       // select whichever place this fly-to is actually for (or none, for a
       // plain re-center) — previously this always cleared the selection,
       // which meant clicking a pin to show its popup and zoom to it in the
@@ -469,6 +476,7 @@ export default function MapPage() {
   };
 
   const [resolving, setResolving] = useState(false);
+  const [resolveResult, setResolveResult] = useState(null); // null | 'found' | 'failed'
   // the "add place" window used to `await resolveCoords(...)` before ever
   // saving anything or closing itself — so whenever a google maps link was
   // present (the ONLY time real network calls actually happen; a bare name
@@ -497,16 +505,30 @@ export default function MapPage() {
     const resolveInBackground = (targetPlaceId, needsLookup) => {
       if (!needsLookup) return;
       setResolving(true);
+      setResolveResult(null);
       resolveCoords({ url: data.url, address: data.address })
         .then((coords) => {
           if (coords?.lat) {
             updatePlace(realFolderId, targetPlaceId, { lat: coords.lat, lng: coords.lng });
             refresh();
             setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
+            setResolveResult('found');
+          } else {
+            // was previously silent either way — from the person's side that
+            // looks identical to "nothing happened," indistinguishable from
+            // the feature being broken. this makes a failure to locate
+            // explicit, and points at the one method that doesn't depend on
+            // any third-party service staying up: pasting coordinates
+            // directly (tap-and-hold a spot in Google Maps, copy the
+            // "lat, lng" shown at the bottom).
+            setResolveResult('failed');
           }
         })
-        .catch((err) => console.error('place geocoding failed', err))
-        .finally(() => setResolving(false));
+        .catch((err) => { console.error('place geocoding failed', err); setResolveResult('failed'); })
+        .finally(() => {
+          setResolving(false);
+          setTimeout(() => setResolveResult(null), 4500);
+        });
     };
 
     if (placeId) {
@@ -547,6 +569,16 @@ export default function MapPage() {
         <div className="fixed top-0 left-0 right-0 z-[60] flex justify-center pointer-events-none">
           <span className="mt-[calc(env(safe-area-inset-top,0px)+8px)] text-[11px] bg-black/80 text-white px-3 py-1.5 rounded-full lowercase shadow-lg">
             locating…
+          </span>
+        </div>
+      )}
+      {!resolving && resolveResult && (
+        <div className="fixed top-0 left-0 right-0 z-[60] flex justify-center pointer-events-none">
+          <span className={cn(
+            'mt-[calc(env(safe-area-inset-top,0px)+8px)] text-[11px] px-3 py-1.5 rounded-full lowercase shadow-lg text-center max-w-[90%]',
+            resolveResult === 'found' ? 'bg-black/80 text-white' : 'bg-destructive text-destructive-foreground'
+          )}>
+            {resolveResult === 'found' ? 'location found' : "couldn't locate that — try pasting the lat, lng shown when you tap-and-hold a spot in google maps"}
           </span>
         </div>
       )}

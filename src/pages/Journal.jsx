@@ -198,7 +198,7 @@ export default function Journal() {
                 ),
                 today && !selected && 'ring-1 ring-foreground'
               )}
-              style={!photoEntry?.photo && periodDay && !selected ? { backgroundColor: hexToRgba(periodColor, 0.6), color: 'hsl(var(--background))' } : undefined}
+              style={!photoEntry?.photo && periodDay && !selected ? { backgroundColor: hexToRgba(periodColor, 0.18) } : undefined}
               style={photoEntry?.photo ? {
                 backgroundImage: `url(${photoEntry.photo})`,
                 backgroundSize: 'cover',

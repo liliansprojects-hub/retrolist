@@ -131,7 +131,10 @@ export default function MasonryGrid({ folders, editMode, onResize, onReorder, on
     const sz = BLOCK_SIZES.find((s) => s.id === (f.size || 'portrait'));
     const aspect = f.aspect || parseRatio(sz ? sz.ratio : '3/4');
     const span = f.span === 2 && width >= 2 * MIN_W ? 2 : 1;
-    const defW = span === 2 ? Math.min(width, 2 * colW) : colW;
+    // a few px narrower than a strict half-column on purpose — guarantees a
+    // clearly visible gap between two default blocks side by side, rather
+    // than relying only on H_MARGIN's later trim to make room.
+    const defW = span === 2 ? Math.min(width, 2 * colW) : Math.max(MIN_W, colW - 4);
     const w = f.w != null ? Math.max(MIN_W, Math.min(width || defW, f.w)) : defW;
     const h = f.h != null ? f.h : (defW > 0 ? defW / aspect : 300);
     const order = (liveOrder && liveOrder[f.id] != null) ? liveOrder[f.id] : (f.order != null ? f.order : idx);
