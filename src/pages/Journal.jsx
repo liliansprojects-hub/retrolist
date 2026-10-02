@@ -259,7 +259,16 @@ function DayDetail({ date, onRefresh, periodEnabled }) {
 
   const load = () => {
     setEntries(getJournal().filter((e) => e.date === dateStr));
-    setEvents(getEvents().filter((ev) => ev.date === dateStr));
+    setEvents(
+      getEvents()
+        .filter((ev) => ev.date === dateStr)
+        .sort((a, b) => {
+          if (!a.time && !b.time) return 0;
+          if (!a.time) return -1; // no-time entries first
+          if (!b.time) return 1;
+          return a.time.localeCompare(b.time); // 'HH:mm' sorts correctly as a string
+        })
+    );
     setPeriod(getPeriodData().filter((p) => p.date === dateStr));
     setMapPlaces(getMapFolders().flatMap((f) => f.places || []));
   };
