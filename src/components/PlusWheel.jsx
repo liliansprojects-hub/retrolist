@@ -11,6 +11,13 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
   const [wheelMode, setWheelMode] = useState(false);
   const [vp, setVp] = useState({ w: 0, h: 0 });
   const longPressTimer = useRef(null);
+  // releasing a long-press also fires a synthesized "click" event right
+  // after (same pointerdown/pointerup pair), and since the wheel is already
+  // open by then, handleClick's toggle was closing it instantly — the wheel
+  // flashed open then immediately shut the moment you let go. this flag
+  // lets that one trailing click be ignored specifically when it follows a
+  // long-press, without affecting a genuine quick tap.
+  const wasLongPress = useRef(false);
 
   useEffect(() => {
     const u = () => setVp({ w: window.innerWidth, h: window.innerHeight });
@@ -20,10 +27,15 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
   }, []);
 
   const handlePressStart = () => {
-    longPressTimer.current = setTimeout(() => { setWheelMode(true); setOpen(true); }, 450);
+    wasLongPress.current = false;
+    longPressTimer.current = setTimeout(() => { wasLongPress.current = true; setWheelMode(true); setOpen(true); }, 450);
   };
   const handlePressEnd = () => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } };
-  const handleClick = () => { if (open) { close(); return; } setWheelMode(false); setOpen(true); };
+  const handleClick = () => {
+    if (wasLongPress.current) { wasLongPress.current = false; return; }
+    if (open) { close(); return; }
+    setWheelMode(false); setOpen(true);
+  };
   const close = () => { setOpen(false); setWheelMode(false); };
   const handleSelect = (value, gIdx) => { onSelect(value, gIdx); close(); };
 

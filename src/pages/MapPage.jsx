@@ -102,6 +102,13 @@ async function resolveShortLink(url) {
       const json = await res.json();
       return json?.resolved_url || null;
     },
+    // extra redundancy — these free services individually go down, get
+    // rate-limited, or change behavior unpredictably with no SLA, so every
+    // additional independent option improves the odds one of them is up.
+    async (u) => {
+      const res = await fetchWithTimeout(u, { redirect: 'follow', mode: 'cors' }, 6000);
+      return res.url && res.url !== u ? res.url : null;
+    },
   ];
   for (const resolve of redirectResolvers) {
     try {

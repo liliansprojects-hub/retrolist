@@ -134,7 +134,10 @@ export default function MasonryGrid({ folders, editMode, onResize, onReorder, on
     // a few px narrower than a strict half-column on purpose — guarantees a
     // clearly visible gap between two default blocks side by side, rather
     // than relying only on H_MARGIN's later trim to make room.
-    const defW = span === 2 ? Math.min(width, 2 * colW) : Math.max(MIN_W, colW - 4);
+    // noticeably narrower than a strict half-column, scaling with column
+    // width (not a flat px amount) so the gap stays comfortable whether the
+    // screen is a small phone or a wide tablet.
+    const defW = span === 2 ? Math.min(width, 2 * colW) : Math.max(MIN_W, colW * 0.92);
     const w = f.w != null ? Math.max(MIN_W, Math.min(width || defW, f.w)) : defW;
     const h = f.h != null ? f.h : (defW > 0 ? defW / aspect : 300);
     const order = (liveOrder && liveOrder[f.id] != null) ? liveOrder[f.id] : (f.order != null ? f.order : idx);
