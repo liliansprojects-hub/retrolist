@@ -235,6 +235,7 @@ export default function CropModal({ imageSrc, aspect = 1, round = false, maxSize
 
         <div
           ref={frameRef}
+          data-allow-pinch="true"
           className="relative overflow-hidden bg-black/40 touch-none"
           style={{ width: frame.w, height: frame.h, aspectRatio: aspect, borderRadius: round ? '9999px' : '1.25rem', touchAction: 'none' }}
           onPointerDown={onPointerDown}

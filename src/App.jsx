@@ -67,11 +67,33 @@ function App() {
     };
     window.addEventListener('pointerdown', prime);
 
+    // second layer of pinch-zoom prevention, independent of the viewport
+    // meta tag / touch-action CSS (some devices, accessibility settings and
+    // wrappers don't honour those): cancel any two-finger touch movement
+    // and Safari's gesture events everywhere EXCEPT the photo crop frame,
+    // which handles its own pinch and is marked data-allow-pinch.
+    const blockPinch = (e) => {
+      if (e.touches && e.touches.length > 1 && !(e.target instanceof Element && e.target.closest('[data-allow-pinch]'))) {
+        e.preventDefault();
+      }
+    };
+    const blockGesture = (e) => {
+      if (!(e.target instanceof Element && e.target.closest('[data-allow-pinch]'))) e.preventDefault();
+    };
+    document.addEventListener('touchmove', blockPinch, { passive: false });
+    document.addEventListener('gesturestart', blockGesture);
+    document.addEventListener('gesturechange', blockGesture);
+
     // notification permission is now requested contextually from
     // AlarmModal (with an explanation of why, shown first) instead of
     // blindly here on app load with no context for what it's for.
 
-    return () => window.removeEventListener('pointerdown', prime);
+    return () => {
+      window.removeEventListener('pointerdown', prime);
+      document.removeEventListener('touchmove', blockPinch);
+      document.removeEventListener('gesturestart', blockGesture);
+      document.removeEventListener('gesturechange', blockGesture);
+    };
   }, []);
 
   return (

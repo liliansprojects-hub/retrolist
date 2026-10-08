@@ -12,7 +12,7 @@ import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 // their look until resized. (see packSkyline() below for why this isn't
 // an actual skyline packer anymore.)
 const GAP = 8;
-const H_MARGIN = 3;
+const H_MARGIN = 6;
 const MIN_W = 120;
 const MAX_W = 1000;
 const MIN_H = 90;
@@ -134,10 +134,14 @@ export default function MasonryGrid({ folders, editMode, onResize, onReorder, on
     // a few px narrower than a strict half-column on purpose — guarantees a
     // clearly visible gap between two default blocks side by side, rather
     // than relying only on H_MARGIN's later trim to make room.
-    // noticeably narrower than a strict half-column, scaling with column
-    // width (not a flat px amount) so the gap stays comfortable whether the
-    // screen is a small phone or a wide tablet.
-    const defW = span === 2 ? Math.min(width, 2 * colW) : Math.max(MIN_W, colW * 0.92);
+    // NOTE: deliberately kept as the full, clean column width here, not
+    // shrunk — packing still positions the next block starting exactly at
+    // the column boundary (colW), so narrowing only this block's own width
+    // left slack on one side only (an asymmetric gap, visible as empty
+    // space on the right edge specifically). the actual visible gap between
+    // blocks comes from H_MARGIN below instead, which trims symmetrically
+    // off both sides of every placed block after packing.
+    const defW = span === 2 ? Math.min(width, 2 * colW) : colW;
     const w = f.w != null ? Math.max(MIN_W, Math.min(width || defW, f.w)) : defW;
     const h = f.h != null ? f.h : (defW > 0 ? defW / aspect : 300);
     const order = (liveOrder && liveOrder[f.id] != null) ? liveOrder[f.id] : (f.order != null ? f.order : idx);

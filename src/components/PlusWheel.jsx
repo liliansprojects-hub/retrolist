@@ -121,6 +121,8 @@ export default function PlusWheel({ groups, onSelect, position = 'bottom-center'
           onPointerUp={handlePressEnd}
           onPointerLeave={handlePressEnd}
           onPointerCancel={handlePressEnd}
+          onContextMenu={(e) => e.preventDefault()}
+          draggable={false}
           className={cn('fixed z-50 touch-44 flex items-center justify-center w-14 h-14 rounded-full bg-foreground text-background shadow-lg shadow-foreground/20 active:scale-90 transition-transform icon-no-select', posClass)}
           style={{ touchAction: 'manipulation' }}
           aria-label={open ? 'close' : 'create'}

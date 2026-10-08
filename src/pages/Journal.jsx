@@ -20,6 +20,18 @@ import { useTheme } from '@/lib/theme';
 
 const MOODS = ['✨', '🌱', '☀️', '🌧️', '🔥', '💫', '🌙', '🌊'];
 
+// white or near-black, whichever reads better on top of the given colour
+// (standard perceived-brightness weighting) — keeps the date number legible
+// whatever period colour is chosen.
+function readableOn(hex) {
+  const h = (hex || '#1a1a1a').replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const r = parseInt(full.slice(0, 2), 16) || 0;
+  const g = parseInt(full.slice(2, 4), 16) || 0;
+  const b = parseInt(full.slice(4, 6), 16) || 0;
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? '#111111' : '#ffffff';
+}
+
 // backgroundColor + rgba alpha, not element opacity — opacity would also
 // fade the date number text, unlike the original bg-opacity-only look.
 function hexToRgba(hex, alpha) {
@@ -198,7 +210,7 @@ export default function Journal() {
                 ),
                 today && !selected && 'ring-1 ring-foreground'
               )}
-              style={!photoEntry?.photo && periodDay && !selected ? { backgroundColor: hexToRgba(periodColor, 0.18) } : undefined}
+              style={!photoEntry?.photo && periodDay && !selected ? { backgroundColor: hexToRgba(periodColor, 0.7), color: readableOn(periodColor) } : undefined}
               style={photoEntry?.photo ? {
                 backgroundImage: `url(${photoEntry.photo})`,
                 backgroundSize: 'cover',

@@ -81,6 +81,26 @@ async function geocode(address) {
 }
 
 async function resolveShortLink(url) {
+  // Strategy 0: our own server-side Netlify Function. This is the one
+  // approach that's actually different, not just another proxy — it runs
+  // on Netlify's servers, where we control the outgoing request and can
+  // skip sending a browser User-Agent header entirely, which is the actual
+  // reason every client-side proxy attempt below kept failing (Google
+  // serves a JS consent wall with no redirect info to anything that looks
+  // like it's coming from a browser). Tried first since it's the most
+  // reliable by a wide margin; the client-side proxies below remain as a
+  // fallback in case this function isn't deployed for some reason.
+  try {
+    const res = await fetchWithTimeout(`/.netlify/functions/resolve-maps-link?url=${encodeURIComponent(url)}`, {}, 8000);
+    if (res.ok) {
+      const json = await res.json();
+      if (json?.found && json.lat != null) return { lat: json.lat, lng: json.lng };
+    }
+  } catch {
+    // function not available/deployed yet, or errored — fall through to
+    // the client-side strategies below.
+  }
+
   // Strategy 1: services that just chase the HTTP redirect chain and hand
   // back the final URL, without ever rendering/scraping Google's actual
   // page. This matters because Google very often serves a cookie-consent
@@ -154,9 +174,9 @@ async function resolveShortLink(url) {
       // all) since it's how Google encodes the pin's exact position
       // internally.
       const embedded =
+        text.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) ||
         text.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ||
-        text.match(/"lat['"]?\s*:\s*(-?\d+\.\d+)[^}]*"lng['"]?\s*:\s*(-?\d+\.\d+)/) ||
-        text.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+        text.match(/"lat['"]?\s*:\s*(-?\d+\.\d+)[^}]*"lng['"]?\s*:\s*(-?\d+\.\d+)/);
       if (embedded) return { lat: parseFloat(embedded[1]), lng: parseFloat(embedded[2]) };
       const fromFinal = parseMapsUrl(finalUrl);
       if (fromFinal && fromFinal.lat) return fromFinal;

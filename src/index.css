@@ -91,10 +91,16 @@ html, body {
     transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
   }
 
-  /* block native long-press selection on ui elements */
+  /* block native long-press selection AND the native long-press
+     magnifier/callout popup (the "copy/share" bubble with a zoomed-in
+     preview some mobile browsers show on a sustained press) — user-select
+     alone only stops text selection, not that callout, which is what was
+     showing as a brief magnification/glitch when holding the + button. */
   nav, button, [role="button"], .card-no-select, .icon-no-select {
     user-select: none;
     -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
   }
 
   /* keep text selection on inputs and content */

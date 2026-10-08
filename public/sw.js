@@ -24,8 +24,11 @@ if (workbox.navigationPreload.isSupported()) {
   workbox.navigationPreload.enable();
 }
 
+// cache the app's own pages/assets only — never the serverless function
+// calls (a cached "not found" would be served back on every retry) and
+// never third-party requests (map tiles, geocoding, proxies).
 workbox.routing.registerRoute(
-  new RegExp('/*'),
+  ({ url }) => url.origin === self.location.origin && !url.pathname.startsWith('/.netlify/'),
   new workbox.strategies.StaleWhileRevalidate({
     cacheName: CACHE
   })
