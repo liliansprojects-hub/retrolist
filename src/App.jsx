@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { primeAudio } from '@/lib/alarmAudio';
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
@@ -62,7 +63,7 @@ function App() {
     const prime = () => {
       if (primed) return;
       primed = true;
-      import('@/lib/alarmAudio').then(({ primeAudio }) => primeAudio());
+      primeAudio();
       window.removeEventListener('pointerdown', prime);
     };
     window.addEventListener('pointerdown', prime);

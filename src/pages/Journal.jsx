@@ -210,12 +210,17 @@ export default function Journal() {
                 ),
                 today && !selected && 'ring-1 ring-foreground'
               )}
-              style={!photoEntry?.photo && periodDay && !selected ? { backgroundColor: hexToRgba(periodColor, 0.7), color: readableOn(periodColor) } : undefined}
-              style={photoEntry?.photo ? {
-                backgroundImage: `url(${photoEntry.photo})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-              } : undefined}
+              style={
+                photoEntry?.photo
+                  ? {
+                      backgroundImage: `url(${photoEntry.photo})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                    }
+                  : periodDay && !selected
+                    ? { backgroundColor: hexToRgba(periodColor, 0.7), color: readableOn(periodColor) }
+                    : undefined
+              }
             >
               {photoEntry?.photo && <div className="absolute inset-0 bg-black/30" />}
               <span className={cn('text-xs font-semibold relative z-10', photoEntry?.photo && 'text-white drop-shadow')}>

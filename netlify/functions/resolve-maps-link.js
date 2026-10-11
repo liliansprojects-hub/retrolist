@@ -16,7 +16,7 @@
 // in netlify/functions/ becomes a callable endpoint at
 // /.netlify/functions/<filename>, no extra dashboard setup needed.
 
-exports.handler = async (event) => {
+export const handler = async (event) => {
   const url = event.queryStringParameters && event.queryStringParameters.url;
   if (!url || !/^https:\/\/(maps\.app\.goo\.gl|goo\.gl|www\.google\.com|google\.com|maps\.google\.com)\//.test(url)) {
     return { statusCode: 400, body: JSON.stringify({ error: 'missing or invalid url' }) };
