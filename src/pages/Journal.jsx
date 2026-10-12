@@ -20,18 +20,6 @@ import { useTheme } from '@/lib/theme';
 
 const MOODS = ['✨', '🌱', '☀️', '🌧️', '🔥', '💫', '🌙', '🌊'];
 
-// white or near-black, whichever reads better on top of the given colour
-// (standard perceived-brightness weighting) — keeps the date number legible
-// whatever period colour is chosen.
-function readableOn(hex) {
-  const h = (hex || '#1a1a1a').replace('#', '');
-  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
-  const r = parseInt(full.slice(0, 2), 16) || 0;
-  const g = parseInt(full.slice(2, 4), 16) || 0;
-  const b = parseInt(full.slice(4, 6), 16) || 0;
-  return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? '#111111' : '#ffffff';
-}
-
 // backgroundColor + rgba alpha, not element opacity — opacity would also
 // fade the date number text, unlike the original bg-opacity-only look.
 function hexToRgba(hex, alpha) {
@@ -204,9 +192,12 @@ export default function Journal() {
               className={cn(
                 'touch-44 aspect-square rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-colors relative overflow-hidden',
                 !inMonth && 'opacity-30',
+                // a selected period day keeps the muted base (the period shade +
+                // selection ring show on top); only a selected non-period day
+                // goes solid. previously every selected day went solid, which
+                // hid the period colour on exactly the day you'd just toggled.
                 !photoEntry?.photo && (
-                  selected ? 'bg-foreground text-background'
-                  : !periodDay && 'bg-muted/50'
+                  selected && !periodDay ? 'bg-foreground text-background' : 'bg-muted/50'
                 ),
                 today && !selected && 'ring-1 ring-foreground'
               )}
@@ -217,12 +208,16 @@ export default function Journal() {
                       backgroundSize: 'cover',
                       backgroundPosition: 'center',
                     }
-                  : periodDay && !selected
-                    ? { backgroundColor: hexToRgba(periodColor, 0.7), color: readableOn(periodColor) }
-                    : undefined
+                  : undefined
               }
             >
               {photoEntry?.photo && <div className="absolute inset-0 bg-black/30" />}
+              {/* period shade: its own layer at 50% of the chosen colour, under
+                  the date number (z-10) — shows whether or not the day is
+                  selected and whether or not it has a photo. */}
+              {periodDay && (
+                <div className="absolute inset-0 z-0 pointer-events-none" style={{ backgroundColor: hexToRgba(periodColor, 0.5) }} />
+              )}
               <span className={cn('text-xs font-semibold relative z-10', photoEntry?.photo && 'text-white drop-shadow')}>
                 {format(day, 'd')}
               </span>

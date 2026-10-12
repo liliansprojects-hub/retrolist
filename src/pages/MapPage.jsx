@@ -9,6 +9,7 @@ import ImageUpload from '@/components/ImageUpload';
 import ColorPicker from '@/components/ColorPicker';
 import { useSync } from '@/lib/SyncContext';
 import { cn } from '@/lib/utils';
+import { resolveCoords, parseManualCoords } from '@/lib/mapsResolve';
 import { WifiOff } from 'lucide-react';
 
 // NOTE ON THE MAP LIBRARY: this used to be react-leaflet. Leaflet's own
@@ -23,214 +24,9 @@ import { WifiOff } from 'lucide-react';
 // failure mode outright. It's also a much smaller, dependency-free
 // library, so this is a straight simplification, not just a swap.
 
-// returns { lat, lng } if coords found, { placeName } if a place name is extractable, else null
-function parseMapsUrl(url) {
-  if (!url) return null;
-  const atMatch = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-  if (atMatch) return { lat: parseFloat(atMatch[1]), lng: parseFloat(atMatch[2]) };
-  const qMatch = url.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
-  if (qMatch) return { lat: parseFloat(qMatch[1]), lng: parseFloat(qMatch[2]) };
-  const destMatch = url.match(/destination=(-?\d+\.\d+),(-?\d+\.\d+)/);
-  if (destMatch) return { lat: parseFloat(destMatch[1]), lng: parseFloat(destMatch[2]) };
-  const coordMatch = url.match(/(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/);
-  if (coordMatch) return { lat: parseFloat(coordMatch[1]), lng: parseFloat(coordMatch[2]) };
-  const placeMatch = url.match(/maps\/(?:place|search)\/([^/@?#]+)/);
-  if (placeMatch) {
-    try {
-      const name = decodeURIComponent(placeMatch[1].replace(/\+/g, ' ')).trim();
-      if (name) return { placeName: name };
-    } catch { /* malformed %-encoding in a pasted link — fall through */ }
-  }
-  const qText = url.match(/[?&](?:q|query)=([^&#]+)/);
-  if (qText) {
-    try {
-      const name = decodeURIComponent(qText[1]).replace(/^[-\d.]+,[-\d.]+$/, '').trim();
-      if (name) return { placeName: name };
-    } catch { /* malformed %-encoding — fall through */ }
-  }
-  return null;
-}
-
-// every network call below now goes through this — a proxy or geocoder
-// that hangs (rather than erroring quickly) previously had no timeout at
-// all, so "add place" could sit doing nothing for a very long time with
-// zero feedback, which reads exactly like "the button doesn't work."
-// capped at a few seconds each, this guarantees the save always completes
-// promptly — worst case, the place saves without a pin instead of hanging.
-async function fetchWithTimeout(url, opts = {}, ms = 6000) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), ms);
-  try {
-    return await fetch(url, { ...opts, signal: ctrl.signal });
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-async function geocode(address) {
-  try {
-    const res = await fetchWithTimeout(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`
-    );
-    const data = await res.json();
-    if (data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-  } catch {
-    /* offline, blocked, or timed out — save without coords rather than hang */
-  }
-  return null;
-}
-
-async function resolveShortLink(url) {
-  // Strategy 0: our own server-side Netlify Function. This is the one
-  // approach that's actually different, not just another proxy — it runs
-  // on Netlify's servers, where we control the outgoing request and can
-  // skip sending a browser User-Agent header entirely, which is the actual
-  // reason every client-side proxy attempt below kept failing (Google
-  // serves a JS consent wall with no redirect info to anything that looks
-  // like it's coming from a browser). Tried first since it's the most
-  // reliable by a wide margin; the client-side proxies below remain as a
-  // fallback in case this function isn't deployed for some reason.
-  try {
-    const res = await fetchWithTimeout(`/.netlify/functions/resolve-maps-link?url=${encodeURIComponent(url)}`, {}, 8000);
-    if (res.ok) {
-      const json = await res.json();
-      if (json?.found && json.lat != null) return { lat: json.lat, lng: json.lng };
-    }
-  } catch {
-    // function not available/deployed yet, or errored — fall through to
-    // the client-side strategies below.
-  }
-
-  // Strategy 1: services that just chase the HTTP redirect chain and hand
-  // back the final URL, without ever rendering/scraping Google's actual
-  // page. This matters because Google very often serves a cookie-consent
-  // wall instead of real content to any request that isn't a normal
-  // logged-in browser session — a proxy that has to read the rendered page
-  // hits that wall and comes back with nothing, no matter how good the
-  // regex is. Redirects themselves aren't consent-gated, so this sidesteps
-  // the problem rather than trying to defeat it. maps.app.goo.gl links
-  // resolve to a full google.com/maps/place/.../@lat,lng,zoom/... URL,
-  // which already has the coordinates sitting in the URL itself.
-  const redirectResolvers = [
-    async (u) => {
-      const res = await fetchWithTimeout(`https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, {}, 6000);
-      const json = await res.json();
-      return json?.status?.url || null;
-    },
-    async (u) => {
-      const res = await fetchWithTimeout(`https://unshorten.me/json/${encodeURIComponent(u)}`, {}, 6000);
-      const json = await res.json();
-      return json?.resolved_url || null;
-    },
-    // extra redundancy — these free services individually go down, get
-    // rate-limited, or change behavior unpredictably with no SLA, so every
-    // additional independent option improves the odds one of them is up.
-    async (u) => {
-      const res = await fetchWithTimeout(u, { redirect: 'follow', mode: 'cors' }, 6000);
-      return res.url && res.url !== u ? res.url : null;
-    },
-  ];
-  for (const resolve of redirectResolvers) {
-    try {
-      const finalUrl = await resolve(url);
-      if (finalUrl) {
-        const coords = parseMapsUrl(finalUrl);
-        if (coords?.lat) return coords;
-        if (coords?.placeName) {
-          const g = await geocode(coords.placeName);
-          if (g) return g;
-        }
-      }
-    } catch {
-      // try the next resolver
-    }
-  }
-
-  // Strategy 2: actually fetch and scrape the rendered page for embedded
-  // coordinates — a second line of defense for links that don't carry
-  // @lat,lng even in their fully-resolved form.
-  const proxies = [
-    // r.jina.ai renders the page (handles JS-based consent walls Google can
-    // throw at plain scraper requests) and returns clean text — tried
-    // first since it's the most likely to actually get real content back
-    // rather than a blank consent page.
-    (u) => `https://r.jina.ai/${u}`,
-    (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-    (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  ];
-  for (const buildProxyUrl of proxies) {
-    try {
-      const res = await fetchWithTimeout(buildProxyUrl(url), { redirect: 'follow' }, 6000);
-      const finalUrl = res.url || url;
-      const coords = parseMapsUrl(finalUrl);
-      if (coords && coords.lat) return coords;
-      const text = await res.text();
-      // several patterns, tried in order of how reliably each shows up in
-      // scraped Google Maps HTML: the classic @lat,lng in a URL anywhere in
-      // the page, a raw lat/lng JSON pair, and Google's internal
-      // "!3d<lat>!4d<lng>" data-blob marker, which is present on almost
-      // every place page (including ones with no @lat,lng in the URL at
-      // all) since it's how Google encodes the pin's exact position
-      // internally.
-      const embedded =
-        text.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) ||
-        text.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ||
-        text.match(/"lat['"]?\s*:\s*(-?\d+\.\d+)[^}]*"lng['"]?\s*:\s*(-?\d+\.\d+)/);
-      if (embedded) return { lat: parseFloat(embedded[1]), lng: parseFloat(embedded[2]) };
-      const fromFinal = parseMapsUrl(finalUrl);
-      if (fromFinal && fromFinal.lat) return fromFinal;
-    } catch {
-      // try the next proxy
-    }
-  }
-  return null;
-}
-
-async function resolveCoords({ url, address }) {
-  const attempt = (async () => {
-    let coords = null;
-    if (url) {
-      const parsed = parseMapsUrl(url);
-      if (parsed?.lat) coords = parsed;
-      else if (parsed?.placeName) coords = await geocode(parsed.placeName);
-      // fall back to actually fetching the real Google Maps page and scraping
-      // its embedded coordinates — not just for goo.gl/maps.app short links,
-      // but for ANY maps URL once a plain Nominatim name search comes up
-      // empty. Modern Google share links are often long-format, place-ID-based
-      // URLs (no @lat,lng in the URL itself), and Nominatim's business/venue
-      // name coverage is much weaker than Google's — searching by bare name
-      // frequently fails for real places, while the actual page HTML almost
-      // always has the true coordinates embedded somewhere.
-      if (!coords) coords = await resolveShortLink(url);
-    }
-    if (!coords && address) coords = await geocode(address);
-    return coords;
-  })();
-  // belt-and-suspenders: fetchWithTimeout already caps each individual
-  // network call, but this caps the WHOLE resolution attempt too. This
-  // runs entirely in the background now (see handlePlaceSave), so a
-  // generous ceiling here just means more of the fallback strategies get
-  // a real chance to run before giving up, with no UI cost either way.
-  return Promise.race([
-    attempt,
-    new Promise((resolve) => setTimeout(() => resolve(null), 30000)),
-  ]);
-}
-
-// last-resort, 100%-reliable path: a "lat, lng" pair typed/pasted straight
-// from Google Maps (tap-and-hold a spot → the coordinates shown at the
-// bottom can be copied directly). doesn't depend on any link parsing,
-// third-party proxy, or geocoding service working at all.
-function parseManualCoords(str) {
-  if (!str) return null;
-  const m = String(str).trim().match(/^(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$/);
-  if (!m) return null;
-  const lat = parseFloat(m[1]);
-  const lng = parseFloat(m[2]);
-  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
-  return { lat, lng };
-}
+// places the background sweep has already tried to locate this session, so an
+// unlocatable one isn't re-queried (and re-waited-on) every time the page opens
+const sweepTried = new Set();
 
 const folderColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 
@@ -412,7 +208,9 @@ export default function MapPage() {
         for (const place of folder.places || []) {
           if (place.lat) continue;
           if (!place.url && !place.address) continue;
-          const coords = await resolveCoords({ url: place.url, address: place.address });
+          if (sweepTried.has(place.id)) continue; // already tried this session
+          sweepTried.add(place.id);
+          const coords = await resolveCoords({ url: place.url, address: place.address, name: place.name });
           if (coords?.lat && !cancelled) {
             place.lat = coords.lat;
             place.lng = coords.lng;
@@ -456,22 +254,18 @@ export default function MapPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterSignal, mapSize.w, mapSize.h, mappedPlaces.length]);
 
-  // zoom into a specific place whenever it's targeted (new place just
-  // located, or an existing one tapped in the list/on the map) — but rather
-  // than zooming in tight on just that one point, fit as many of the other
-  // visible pins into the same frame as possible, so locating a place
-  // doesn't hide everything else that was already on the map.
+  // zoom straight onto a specific place whenever it's targeted (a place just
+  // located, or one tapped in the list / on the map): centred on the exact
+  // point at street level (zoom 17), with its popup open. (The map still
+  // fits every pin into one frame by default and when filters change — that
+  // lives in the fit effect above; this is only for "take me to THIS place".)
   useEffect(() => {
-    if (flyTarget && flyTarget.lat) {
-      const others = mappedPlaces.filter((p) => p.lat != null && p.lng != null);
-      const points = [[flyTarget.lat, flyTarget.lng], ...others.map((p) => [p.lat, p.lng])];
-      const fit = fitPoints(points, mapSize.w, mapSize.h) || { center: [flyTarget.lat, flyTarget.lng], zoom: 15 };
-      setCenter(fit.center);
-      setZoom(fit.zoom);
-      // select whichever place this fly-to is actually for (or none, for a
-      // plain re-center) — previously this always cleared the selection,
-      // which meant clicking a pin to show its popup and zoom to it in the
-      // same action instantly closed the popup it had just opened.
+    if (flyTarget && flyTarget.lat != null) {
+      setCenter([flyTarget.lat, flyTarget.lng]);
+      setZoom(17);
+      // select whichever place this fly-to is for (or none, for a plain
+      // re-center) — clearing it here used to close a popup the same tap had
+      // just opened.
       setSelectedPin(flyTarget.placeId ?? null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -533,13 +327,14 @@ export default function MapPage() {
       if (!needsLookup) return;
       setResolving(true);
       setResolveResult(null);
-      resolveCoords({ url: data.url, address: data.address })
+      resolveCoords({ url: data.url, address: data.address, name: data.name })
         .then((coords) => {
           if (coords?.lat) {
             updatePlace(realFolderId, targetPlaceId, { lat: coords.lat, lng: coords.lng });
             refresh();
             setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
-            setResolveResult('found');
+            // name/address searches are a best guess, not the exact pin — say so
+            setResolveResult(coords.approx ? 'approx' : 'found');
           } else {
             // was previously silent either way — from the person's side that
             // looks identical to "nothing happened," indistinguishable from
@@ -603,9 +398,11 @@ export default function MapPage() {
         <div className="fixed top-0 left-0 right-0 z-[60] flex justify-center pointer-events-none">
           <span className={cn(
             'mt-[calc(env(safe-area-inset-top,0px)+8px)] text-[11px] px-3 py-1.5 rounded-full lowercase shadow-lg text-center max-w-[90%]',
-            resolveResult === 'found' ? 'bg-black/80 text-white' : 'bg-destructive text-destructive-foreground'
+            resolveResult === 'failed' ? 'bg-destructive text-destructive-foreground' : 'bg-black/80 text-white'
           )}>
-            {resolveResult === 'found' ? 'location found' : "couldn't locate that — try pasting the lat, lng shown when you tap-and-hold a spot in google maps"}
+            {resolveResult === 'found' ? 'location found'
+              : resolveResult === 'approx' ? 'approximate location found from the name — check the pin'
+              : "couldn't locate that — try pasting the lat, lng shown when you tap-and-hold a spot in google maps"}
           </span>
         </div>
       )}

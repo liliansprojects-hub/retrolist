@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { primeAudio } from '@/lib/alarmAudio';
+import { installZoomLock } from '@/lib/zoomLock';
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
@@ -68,22 +69,9 @@ function App() {
     };
     window.addEventListener('pointerdown', prime);
 
-    // second layer of pinch-zoom prevention, independent of the viewport
-    // meta tag / touch-action CSS (some devices, accessibility settings and
-    // wrappers don't honour those): cancel any two-finger touch movement
-    // and Safari's gesture events everywhere EXCEPT the photo crop frame,
-    // which handles its own pinch and is marked data-allow-pinch.
-    const blockPinch = (e) => {
-      if (e.touches && e.touches.length > 1 && !(e.target instanceof Element && e.target.closest('[data-allow-pinch]'))) {
-        e.preventDefault();
-      }
-    };
-    const blockGesture = (e) => {
-      if (!(e.target instanceof Element && e.target.closest('[data-allow-pinch]'))) e.preventDefault();
-    };
-    document.addEventListener('touchmove', blockPinch, { passive: false });
-    document.addEventListener('gesturestart', blockGesture);
-    document.addEventListener('gesturechange', blockGesture);
+    // page zoom is locked on every input path (see lib/zoomLock.js),
+    // except inside the photo crop frame.
+    const removeZoomLock = installZoomLock();
 
     // notification permission is now requested contextually from
     // AlarmModal (with an explanation of why, shown first) instead of
@@ -91,9 +79,7 @@ function App() {
 
     return () => {
       window.removeEventListener('pointerdown', prime);
-      document.removeEventListener('touchmove', blockPinch);
-      document.removeEventListener('gesturestart', blockGesture);
-      document.removeEventListener('gesturechange', blockGesture);
+      removeZoomLock();
     };
   }, []);
 
