@@ -39,8 +39,55 @@ const folderColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3
 // explicit tile source (the canonical OpenStreetMap host): the standard OSM
 // style, which draws parks and green space, water, roads and building
 // footprints around every location.
-// (dpr 2 asks for the sharp @2x tiles on high-density phone screens)
-const osmTiles = (x, y, z, dpr) => `https://tile.openstreetmap.org/${z}/${x}/${y}${dpr && dpr >= 2 ? '@2x' : ''}.png`;
+// NOTE: tile.openstreetmap.org has NO "@2x" retina tiles — asking for them
+// (which this used to do on every high-density phone screen) returns errors,
+// so the map showed up blank or patchy on phones. One standard tile URL only.
+const osmTiles = (x, y, z) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+
+// Our own tile <img> instead of pigeon-maps' default one:
+//  - loads eagerly (the default loading="lazy" can leave tiles un-fetched in
+//    some phone webviews / installed-app wrappers, so the map stayed grey)
+//  - escapes the global `img { max-width:100%; height:auto }` reset, which
+//    could squash or misplace tiles while zooming
+//  - fades in when loaded and retries a failed tile once
+function MapTile({ tile, tileLoaded }) {
+  const [src, setSrc] = useState(tile.url);
+  const [shown, setShown] = useState(false);
+  const retried = useRef(false);
+  useEffect(() => { setSrc(tile.url); retried.current = false; }, [tile.url]);
+  return (
+    <img
+      src={src}
+      width={tile.width}
+      height={tile.height}
+      alt=""
+      draggable={false}
+      decoding="async"
+      referrerPolicy="strict-origin-when-cross-origin"
+      onLoad={() => { setShown(true); tileLoaded(); }}
+      onError={() => {
+        if (retried.current) { tileLoaded(); return; }
+        retried.current = true;
+        setTimeout(() => setSrc(tile.url + '?r=1'), 1200);
+      }}
+      style={{
+        position: 'absolute',
+        left: tile.left,
+        top: tile.top,
+        width: tile.width,
+        height: tile.height,
+        maxWidth: 'none',
+        maxHeight: 'none',
+        willChange: 'transform',
+        transformOrigin: 'top left',
+        opacity: shown ? 1 : 0,
+        transition: 'opacity 180ms ease-out',
+        userSelect: 'none',
+        pointerEvents: 'none',
+      }}
+    />
+  );
+}
 
 const hasCoords = (p) =>
   p.lat != null && p.lng != null && p.lat !== '' && p.lng !== '' &&
@@ -379,7 +426,7 @@ export default function MapPage() {
       {/* map — collapses when a place is being edited. always rendered
           (not gated on having any resolved places) so the base map itself
           is always visible. */}
-      <div ref={mapWrapRef} data-allow-pinch="true" style={{ touchAction: 'none' }} className={`relative rounded-2xl overflow-hidden mb-4 transition-all duration-300 ${editingPlace ? 'h-36' : 'h-64'}`}>
+      <div ref={mapWrapRef} data-allow-pinch="true" style={{ touchAction: 'none' }} className={`relative rounded-2xl overflow-hidden mb-4 bg-[#f2efe9] transition-all duration-300 ${editingPlace ? 'h-36' : 'h-64'}`}>
         {mapSize.w > 0 && (
           <PigeonMap
             center={center}
@@ -387,7 +434,8 @@ export default function MapPage() {
             width={mapSize.w}
             height={mapSize.h}
             provider={osmTiles}
-            dprs={[1, 2]}
+            tileComponent={MapTile}
+            attribution={false}
             minZoom={MIN_ZOOM}
             maxZoom={MAX_ZOOM}
             animate
@@ -423,7 +471,7 @@ export default function MapPage() {
             </button>
           ))}
         </div>
-        <span className="absolute bottom-1 right-1.5 text-[9px] text-black/40 bg-white/60 px-1 rounded pointer-events-none">© OpenStreetMap</span>
+        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer noopener" className="absolute bottom-1 right-1.5 z-[5] text-[9px] text-black/50 bg-white/70 px-1 rounded">© OpenStreetMap</a>
         {mapIsOffline && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/80 backdrop-blur-sm">
             <WifiOff className="w-6 h-6 text-muted-foreground" />

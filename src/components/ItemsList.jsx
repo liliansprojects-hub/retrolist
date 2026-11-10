@@ -22,7 +22,7 @@ export default function ItemsList({ items, sort, setSort, onDragEnd, folderType,
               {sorted.map((item, index) => (
                 <Draggable key={item.id} draggableId={item.id} index={index} isDragDisabled={sort !== 'custom'}>
                   {(prov) => (
-                    <div ref={prov.innerRef} {...prov.draggableProps} className="flex items-stretch gap-0.5">
+                    <div ref={prov.innerRef} {...prov.draggableProps} id={`item-${item.id}`} className="flex items-stretch gap-0.5 rounded-xl transition-shadow">
                       {sort === 'custom' && (
                         <div {...prov.dragHandleProps} className="flex items-center justify-center w-3 text-muted-foreground cursor-grab">
                           <GripVertical className="w-3 h-3" />
