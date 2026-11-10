@@ -13,6 +13,10 @@
 
 export const MAX_ALARMS = 100;
 const MAX_ONE_SHOTS = 20;
+// An alarm that nobody answers rings again every minute, this many more times
+// (a web notification can only buzz/sound once per push, so repeats are how it
+// keeps ringing with the app closed). Opening / dismissing / snoozing stops them.
+export const REPEATS = 4;
 
 // Only ever POST encrypted payloads to the real browser push services. Without
 // this, anyone could register an arbitrary URL and make the server fetch it.
@@ -89,7 +93,7 @@ export function dueForDevice(rec, fromMin, toMin) {
   }
   const keep = [];
   for (const o of rec.oneShots || []) {
-    if (o.at >= fromMin * 60000 && o.at < (toMin + 1) * 60000) due.push({ alarm: o.alarm, minute: Math.floor(o.at / 60000), snoozed: true });
+    if (o.at >= fromMin * 60000 && o.at < (toMin + 1) * 60000) due.push({ alarm: o.alarm, minute: Math.floor(o.at / 60000), snoozed: !o.repeat, repeat: !!o.repeat, left: o.left });
     else if (o.at >= (toMin + 1) * 60000) keep.push(o); // still in the future; past-due ones are dropped
   }
   return { due, oneShots: keep };
@@ -167,9 +171,16 @@ export async function handleRequest({ method, action, body }, { devices, meta, w
       const a = sanitizeAlarm(body.alarm);
       if (!a) return J(400, { error: 'bad alarm' });
       const minutes = Math.min(60, Math.max(1, parseInt(body.minutes, 10) || a.snooze));
-      const shots = [...(rec.oneShots || []).filter((o) => o.at > now()), { at: now() + minutes * 60000, alarm: a }].slice(-MAX_ONE_SHOTS);
+      const shots = [...(rec.oneShots || []).filter((o) => o.at > now() && !(o.repeat && o.alarm.id === a.id)), { at: now() + minutes * 60000, alarm: a }].slice(-MAX_ONE_SHOTS);
       await devices.set(key, { ...rec, oneShots: shots, updatedAt: now() });
       return J(200, { ok: true, at: now() + minutes * 60000 });
+    }
+
+    if (body.action === 'stop') {
+      const id = String((body.alarm && body.alarm.id) || body.alarmId || '').slice(0, 64);
+      const shots = (rec.oneShots || []).filter((o) => !(o.repeat && (!id || o.alarm.id === id)));
+      if (shots.length !== (rec.oneShots || []).length) await devices.set(key, { ...rec, oneShots: shots, updatedAt: now() });
+      return J(200, { ok: true });
     }
 
     if (body.action === 'test') {
@@ -212,15 +223,19 @@ export async function runTick({ devices, meta, webpush, subject, nowMs = Date.no
       const rec = await devices.get(key);
       if (!rec || !validSubscription(rec.subscription)) return;
       const { due, oneShots } = dueForDevice(rec, from, N);
-      if ((rec.oneShots || []).length !== oneShots.length) await devices.set(key, { ...rec, oneShots });
+      const next = [...oneShots];
+      let changed = (rec.oneShots || []).length !== oneShots.length;
       for (const d of due) {
         try {
-          await webpush.sendNotification(rec.subscription, buildPayload(rec.deviceId, d.alarm, d.minute, d.snoozed ? { snoozed: true } : {}), { TTL: 300, urgency: 'high' });
+          await webpush.sendNotification(rec.subscription, buildPayload(rec.deviceId, d.alarm, d.minute, d.snoozed ? { snoozed: true } : d.repeat ? { repeat: true } : {}), { TTL: 300, urgency: 'high' });
           sent++;
+          const left = d.repeat ? (d.left || 0) - 1 : REPEATS - 1;
+          if (left >= 0 && next.length < MAX_ONE_SHOTS) { next.push({ at: (d.minute + 1) * 60000, alarm: d.alarm, repeat: true, left }); changed = true; }
         } catch (e) {
-          if (e && (e.statusCode === 404 || e.statusCode === 410)) { await devices.delete(key); removed++; break; }
+          if (e && (e.statusCode === 404 || e.statusCode === 410)) { await devices.delete(key); removed++; changed = false; break; }
         }
       }
+      if (changed) await devices.set(key, { ...rec, oneShots: next });
     }));
   }
   // recorded AFTER sending: if a run dies midway the next one retries the

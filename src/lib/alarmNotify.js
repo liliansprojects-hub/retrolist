@@ -212,9 +212,9 @@ export async function disableBackgroundAlarms() {
 
 // the server schedules a push 8 seconds out so there's time to close the app
 export async function sendTestPush() {
-  if (!(await syncAlarms())) return { ok: false, reason: 'not-subscribed' };
+  if (!(await syncAlarms())) return { ok: false, reason: 'not-subscribed', error: 'this phone is not registered with the alarm service yet' };
   const r = await post({ action: 'test', delaySec: 8 }, 20000);
-  return { ok: r.ok, status: r.status };
+  return { ok: r.ok, status: r.status, error: r.json && r.json.error };
 }
 
 // keep the server's copy of the alarms current: on any change, when the
@@ -234,6 +234,17 @@ export function startAlarmSync() {
     window.removeEventListener('online', soon);
     document.removeEventListener('visibilitychange', onVisible);
   };
+}
+
+// answered in the app: tell the server to stop ringing the phone again
+export function serverStop(alarm) {
+  if (notificationState() !== 'granted' || !alarm || !alarm.id) return;
+  post({ action: 'stop', alarm: { id: alarm.id } }).catch(() => {});
+  try {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then((reg) => reg.getNotifications({ tag: 'alarm-' + alarm.id }).then((l) => l.forEach((x) => x.close()))).catch(() => {});
+    }
+  } catch { /* ignore */ }
 }
 
 // snoozing in the app also schedules the repeat on the server, so it still

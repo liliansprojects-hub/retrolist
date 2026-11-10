@@ -3,7 +3,7 @@ import { Bell, VolumeX } from 'lucide-react';
 import { getAlarms, updateAlarm, getSettings } from '@/lib/store';
 import { parseTime, formatTime } from '@/lib/alarms';
 import { startSound, startVibrate, stopAll, vibrationSupported, isSoundBlocked, VIBRATIONS } from '@/lib/alarmAudio';
-import { showAlarmNotification, serverSnooze } from '@/lib/alarmNotify';
+import { showAlarmNotification, serverSnooze, serverStop } from '@/lib/alarmNotify';
 
 // Rings alarms while the app is open (full-screen screen + sound + vibration),
 // and hands off to the OS when it isn't:
@@ -25,6 +25,7 @@ export default function AlarmWatcher() {
     const now = Date.now();
     if (!opts.force && now - (lastFiredAt.current[alarm.id] || 0) < 90000) return; // already rung this minute
     lastFiredAt.current[alarm.id] = now;
+    serverStop(alarm); // the app is answering this ring, so the phone needn't be rung again
 
     let settings = {};
     try { settings = getSettings(); } catch { /* ignore */ }
@@ -169,7 +170,7 @@ export default function AlarmWatcher() {
     return () => { cancelled = true; document.removeEventListener('visibilitychange', again); if (lock) lock.release().catch(() => {}); };
   }, [fired]);
 
-  const dismiss = () => { stopAll(); setSoundBlocked(false); setFired(null); };
+  const dismiss = () => { stopAll(); if (fired) serverStop(fired); setSoundBlocked(false); setFired(null); };
 
   const snooze = () => {
     stopAll();

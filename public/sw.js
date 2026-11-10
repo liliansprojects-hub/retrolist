@@ -15,7 +15,7 @@
 // be replayed forever) and any third-party request (map tiles, geocoding).
 // No external scripts are loaded, so install can't fail on a CDN outage.
 
-const CACHE = 'retrolist-v5';
+const CACHE = 'retrolist-v6';
 const offlineFallbackPage = 'offline.html';
 const SHELL = '/index.html'; // every route of this single-page app serves the same shell
 
@@ -91,6 +91,8 @@ function alarmNotificationOptions(data) {
   const a = data.alarm || {};
   return {
     body: data.body || `${a.name || 'alarm'} — ${a.time || ''}`,
+    lang: 'en',
+    dir: 'ltr',
     icon: ICON,
     badge: BADGE,
     tag: 'alarm-' + (a.id || 'x'),
@@ -102,6 +104,43 @@ function alarmNotificationOptions(data) {
     data: { alarm: a, deviceId: data.deviceId, firedAt: data.firedAt || Date.now(), test: !!data.test },
     actions: [{ action: 'snooze', title: `snooze ${a.snooze || 5}m` }, { action: 'dismiss', title: 'dismiss' }],
   };
+}
+
+// A retro "alarm card" picture shown big inside the notification (Android shows
+// it expanded). Drawn on the fly so it carries the actual time + name.
+async function bannerImage(a) {
+  try {
+    if (typeof OffscreenCanvas === 'undefined') return undefined;
+    const W = 720, H = 360;
+    const c = new OffscreenCanvas(W, H);
+    const g = c.getContext('2d');
+    g.fillStyle = '#0a0a0a'; g.fillRect(0, 0, W, H);
+    g.strokeStyle = '#ffffff'; g.lineWidth = 6; g.strokeRect(18, 18, W - 36, H - 36);
+    g.fillStyle = '#9ca3af'; g.font = '600 30px Georgia, serif'; g.textAlign = 'left';
+    g.fillText('retrolist · alarm', 52, 82);
+    g.fillStyle = '#ffffff'; g.textAlign = 'center';
+    g.font = '800 150px Georgia, serif';
+    g.fillText(String(a.time || ''), W / 2, 220);
+    g.font = '600 38px Georgia, serif';
+    let name = String(a.name || 'alarm').toLowerCase();
+    if (name.length > 28) name = name.slice(0, 27) + '…';
+    g.fillText(name, W / 2, 292);
+    const blob = await c.convertToBlob({ type: 'image/png' });
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return 'data:image/png;base64,' + btoa(bin);
+  } catch (e) { return undefined; }
+}
+
+// stop the "ring again" repeats the server schedules for an unanswered alarm
+async function stopRepeats(d) {
+  try {
+    await fetch('/.netlify/functions/alarm-push', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'stop', deviceId: d.deviceId, alarm: { id: d.alarm && d.alarm.id } }),
+    });
+  } catch (e) { /* offline: repeats just run their course */ }
 }
 
 self.addEventListener('push', (event) => {
@@ -120,6 +159,10 @@ self.addEventListener('push', (event) => {
       if (/Android/i.test(self.navigator.userAgent)) return;
     }
     const opts = alarmNotificationOptions(data);
+    if (!inFront) {
+      const img = await Promise.race([bannerImage(data.alarm || {}), new Promise((r) => setTimeout(() => r(undefined), 1500))]);
+      if (img) opts.image = img;
+    }
     if (inFront) { opts.silent = true; opts.requireInteraction = false; } // the in-app screen is already ringing
     await self.registration.showNotification(data.title || 'retrolist · alarm', opts);
     if (inFront) {
@@ -167,7 +210,13 @@ self.addEventListener('notificationclick', (event) => {
   const n = event.notification;
   const d = n.data || {};
   n.close();
-  if (event.action === 'dismiss') return;
+  if (event.action === 'dismiss') { event.waitUntil(stopRepeats(d)); return; }
   if (event.action === 'snooze') { event.waitUntil(snoozeFromNotification(d)); return; }
-  event.waitUntil(openRinging(d));
+  event.waitUntil(Promise.all([stopRepeats(d), openRinging(d)]));
+});
+
+// swiping the notification away also answers the alarm
+self.addEventListener('notificationclose', (event) => {
+  const d = event.notification.data || {};
+  if (d.alarm && d.deviceId && !d.snoozeNote) event.waitUntil(stopRepeats(d));
 });

@@ -55,6 +55,37 @@ export function extractCoords(text) {
   return null;
 }
 
+
+// Like extractCoords but also says HOW trustworthy the match is, so a redirect
+// chain can keep following until it finds the pin itself instead of settling on
+// the first camera position it sees:  3 = the pin (!3d!4d), 2 = the link's
+// target (q= ll= center= destination=), 1 = the map camera (@lat,lng)
+export function extractCoordsRanked(text) {
+  if (!text) return null;
+  const s = String(text);
+  let m = s.match(new RegExp(`!3d(${NUM})!4d(${NUM})`));
+  if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 3 }; }
+  m = s.match(new RegExp(`[?&;](?:center|ll|q|query|destination|daddr)=(${NUM})(?:%2C|%2c|,)\\s*(${NUM})`));
+  if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 2 }; }
+  m = s.match(new RegExp(`@(${NUM}),(${NUM})`));
+  if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 1 }; }
+  return null;
+}
+
+// The ONLY place coordinates are read out of a web PAGE (as opposed to a URL):
+// the og:image static-map tag, whose center= is the place itself. Mining the
+// rest of Google's page text is what made unrelated links all land on the same
+// default spot — its scripts are full of default/sample coordinates.
+export function ogImageCenter(html) {
+  if (!html) return null;
+  const tag = String(html).match(/<meta[^>]+(?:property|itemprop|name)=["'](?:og:image|image)["'][^>]*>/i);
+  if (!tag) return null;
+  const content = tag[0].match(/content=["']([^"']+)["']/i);
+  if (!content) return null;
+  const r = extractCoordsRanked(content[1].replace(/&amp;/g, '&'));
+  return r ? { lat: r.lat, lng: r.lng } : null;
+}
+
 const safeDecode = (str) => {
   try { return decodeURIComponent(str); } catch { return str; }
 };
@@ -157,13 +188,11 @@ async function proxyResolve(link, fetchFn, ms) {
   const viaAllOrigins = (async () => {
     const res = await fetchWithTimeout(fetchFn, `https://api.allorigins.win/get?url=${enc}`, {}, ms);
     const json = await res.json();
-    return extractCoords(json?.status?.url) || extractCoords(json?.contents);
+    const fromUrl = extractCoordsRanked(json?.status?.url);
+    if (fromUrl && fromUrl.rank >= 2) return { lat: fromUrl.lat, lng: fromUrl.lng };
+    return ogImageCenter(json?.contents) || (fromUrl ? { lat: fromUrl.lat, lng: fromUrl.lng } : null);
   })();
-  const viaJina = (async () => {
-    const res = await fetchWithTimeout(fetchFn, `https://r.jina.ai/${link}`, {}, ms);
-    return extractCoords(await res.text());
-  })();
-  const c = await firstNonNull([viaAllOrigins, viaJina]);
+  const c = await firstNonNull([viaAllOrigins]);
   return c ? { ...c, source: 'proxy', approx: false } : null;
 }
 

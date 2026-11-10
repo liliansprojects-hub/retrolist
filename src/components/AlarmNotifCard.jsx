@@ -63,7 +63,7 @@ export default function AlarmNotifCard({ variant = 'full', onEnabled }) {
   const runTest = async () => {
     setTest('waiting');
     const r = await sendTestPush();
-    if (!r.ok) setTest('failed');
+    if (!r.ok) { setTest('failed'); setNote(r.status === 410 || r.status === 404 ? 'this phone was unregistered — tap "set up background alarms" or re-allow notifications, then test again' : r.status === 502 ? "your phone's push service refused the message — re-allow notifications and try again" : r.error || ''); }
     // success: a notification arrives in ~8s (or the app shows it if it's still open)
     else setTimeout(() => setTest((t) => (t === 'waiting' ? 'idle' : t)), 25000);
   };
@@ -150,7 +150,7 @@ export default function AlarmNotifCard({ variant = 'full', onEnabled }) {
           </button>
           {test === 'waiting' && <p className={body}>a test notification arrives in about 10 seconds — close or lock the app so you can see it.</p>}
           {test === 'received' && <p className="text-xs lowercase mt-2 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> test alarm received — it works</p>}
-          {test === 'failed' && <p className="text-xs text-destructive lowercase mt-2">the test couldn't be sent — check your connection and try again</p>}
+          {test === 'failed' && <p className="text-xs text-destructive lowercase mt-2">the test couldn't be sent — {note || 'check your connection and try again'}</p>}
         </>
       ) : background === false ? (
         <>

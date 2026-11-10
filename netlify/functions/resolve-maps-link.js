@@ -59,11 +59,12 @@ async function timedFetch(url, deadline, opts = {}) {
 
 async function resolve(startUrl, deadline) {
   let current = startUrl;
+  let best = null; // the most trustworthy coordinates seen anywhere along the chain
+  const note = (c, from) => { if (c && (!best || c.rank > best.rank)) best = { ...c, finalUrl: from }; };
 
-  for (let hop = 0; hop < 6 && remaining(deadline) > 0; hop++) {
-    // stop following the moment the URL itself carries coordinates
-    const direct = extractCoords(current);
-    if (direct) return found(direct, current, false);
+  for (let hop = 0; hop < 8 && remaining(deadline) > 0; hop++) {
+    note(extractCoordsRanked(current), current);
+    if (best && best.rank === 3) break; // the pin itself — can't do better
 
     let res;
     try { res = await timedFetch(current, deadline, { redirect: 'manual', headers: { Accept: 'text/html' } }); }
@@ -81,17 +82,15 @@ async function resolve(startUrl, deadline) {
       continue;
     }
 
-    // a real page: coordinates are often embedded (og:image static-map
-    // center=, @lat,lng, etc.) even when the URL itself has none
+    // a real page: only the og:image static-map centre is trusted (see ogImageCenter)
     let text = '';
     try { text = await res.text(); } catch { /* ignore */ }
-    const fromPage = extractCoords(text);
-    if (fromPage) return found(fromPage, current, false);
+    const og = ogImageCenter(text);
+    if (og) note({ ...og, rank: best && best.rank >= 2 ? best.rank - 0.5 : 2 }, current);
     break;
   }
 
-  const direct = extractCoords(current);
-  if (direct) return found(direct, current, false);
+  if (best) return found(best, best.finalUrl || current, false);
 
   // no coordinates anywhere — search by the place name in the URL instead
   const name = placeNameFrom(current);
@@ -130,6 +129,37 @@ function pair(a, b) {
   const lng = parseFloat(b);
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
   return { lat, lng };
+}
+
+
+// Like extractCoords but also says HOW trustworthy the match is, so a redirect
+// chain can keep following until it finds the pin itself instead of settling on
+// the first camera position it sees:  3 = the pin (!3d!4d), 2 = the link's
+// target (q= ll= center= destination=), 1 = the map camera (@lat,lng)
+function extractCoordsRanked(text) {
+  if (!text) return null;
+  const s = String(text);
+  let m = s.match(new RegExp(`!3d(${NUM})!4d(${NUM})`));
+  if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 3 }; }
+  m = s.match(new RegExp(`[?&;](?:center|ll|q|query|destination|daddr)=(${NUM})(?:%2C|%2c|,)\\s*(${NUM})`));
+  if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 2 }; }
+  m = s.match(new RegExp(`@(${NUM}),(${NUM})`));
+  if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 1 }; }
+  return null;
+}
+
+// The ONLY place coordinates are read out of a web PAGE (as opposed to a URL):
+// the og:image static-map tag, whose center= is the place itself. Mining the
+// rest of Google's page text is what made unrelated links all land on the same
+// default spot — its scripts are full of default/sample coordinates.
+function ogImageCenter(html) {
+  if (!html) return null;
+  const tag = String(html).match(/<meta[^>]+(?:property|itemprop|name)=["'](?:og:image|image)["'][^>]*>/i);
+  if (!tag) return null;
+  const content = tag[0].match(/content=["']([^"']+)["']/i);
+  if (!content) return null;
+  const r = extractCoordsRanked(content[1].replace(/&amp;/g, '&'));
+  return r ? { lat: r.lat, lng: r.lng } : null;
 }
 
 // same rules as src/lib/mapsResolve.js (kept self-contained so this function
