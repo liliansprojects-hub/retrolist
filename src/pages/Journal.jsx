@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   ChevronLeft, ChevronRight, Plus, X, Droplet, MapPin, Trash2, Pencil,
 } from 'lucide-react';
@@ -31,9 +32,24 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+// opened from a reminder notification: /journal?date=YYYY-MM-DD jumps to that day
+function dateFromQuery() {
+  try {
+    const d = new URLSearchParams(window.location.search).get('date');
+    if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+    const [y, m, day] = d.split('-').map(Number);
+    return new Date(y, m - 1, day);
+  } catch { return null; }
+}
+
 export default function Journal() {
-  const [month, setMonth] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const location = useLocation();
+  const [month, setMonth] = useState(() => dateFromQuery() || new Date());
+  const [selectedDate, setSelectedDate] = useState(() => dateFromQuery() || new Date());
+  useEffect(() => {
+    const d = dateFromQuery();
+    if (d) { setSelectedDate(d); setMonth(d); }
+  }, [location.search]);
   const [entries, setEntries] = useState([]);
   const [events, setEvents] = useState([]);
   const [period, setPeriod] = useState([]);

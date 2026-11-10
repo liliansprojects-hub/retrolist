@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ChevronLeft, Plus, Share2, Pencil, Pin, Link as LinkIcon, FolderInput, Copy, ListPlus, Folder as FolderIcon, CheckSquare, List, Star, MapPin, Bell, StickyNote, Palette, Repeat, Calendar, Book, Film, Map as MapIcon, BookHeart, Images, X } from 'lucide-react';
 import {
   getFolder, getFolders, getChildFolders, addItem, updateItem, deleteItem, moveItem, copyItem, moveFolder, copyFolder, addFolder, updateFolder, deleteFolder, reorderChecklist, reorderItemsByIndex, reorderChildFoldersByIndex, LIST_TYPES,
@@ -43,6 +43,27 @@ export default function FolderDetail() {
   }, [id, navigate]);
 
   const refresh = () => setFolder(getFolder(id));
+
+  // opened from a reminder notification: /folder/<id>?item=<itemId> scrolls to
+  // that item and briefly highlights it in the accent colour
+  const location = useLocation();
+  useEffect(() => {
+    if (!folder) return undefined;
+    const itemId = new URLSearchParams(location.search).get('item');
+    if (!itemId) return undefined;
+    let tries = 0;
+    let clear = null;
+    const t = setInterval(() => {
+      const el = document.getElementById('item-' + itemId);
+      if (!el && ++tries < 20) return;
+      clearInterval(t);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.style.boxShadow = '0 0 0 2px hsl(var(--foreground))';
+      clear = setTimeout(() => { el.style.boxShadow = ''; }, 2600);
+    }, 150);
+    return () => { clearInterval(t); clearTimeout(clear); };
+  }, [folder?.id, location.search]);
 
   const [subtitle, setSubtitle] = useState(folder?.subtitle || '');
   const subtitleTimer = useRef(null);
