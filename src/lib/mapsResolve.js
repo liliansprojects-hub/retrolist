@@ -221,8 +221,14 @@ export async function resolveCoords({ url, address, name } = {}, { budgetMs = 30
   const server = link ? deadline(serverResolve(link, fetchFn, budgetMs), budgetMs) : Promise.resolve(null);
   const proxies = isGoogleLink ? deadline(proxyResolve(link, fetchFn, budgetMs), budgetMs) : Promise.resolve(null);
 
+  // The place's own NAME is only a usable search when no link was given. With a
+  // link, a name search is a blind guess (and the app's placeholder "unnamed
+  // place" is a real phrase that matches a road in Ohio) — an unresolved link
+  // goes to "tap the map to place it" instead of a wrong-country pin.
+  const PLACEHOLDER = /^(unnamed place|unnamed|place|new place)$/i;
+  const ownName = !link && name && !PLACEHOLDER.test(String(name).trim()) ? name : null;
   const queries = [];
-  for (const q of [address, parsed && parsed.placeName, name]) {
+  for (const q of [address, parsed && parsed.placeName, ownName]) {
     const t = (q || '').trim();
     if (t && !queries.includes(t)) queries.push(t);
   }
