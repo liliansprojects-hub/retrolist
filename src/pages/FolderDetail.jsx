@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Plus, Share2, Pencil, Pin, Link as LinkIcon, FolderInput, Copy, ListPlus, Folder as FolderIcon, CheckSquare, List, Star, MapPin, Bell, StickyNote, Palette, Repeat, Calendar, Book, Film, Map as MapIcon, BookHeart, Images, X } from 'lucide-react';
 import {
-  getFolder, getFolders, getChildFolders, addItem, updateItem, deleteItem, moveItem, copyItem, moveFolder, copyFolder, addFolder, updateFolder, deleteFolder, reorderChecklist, reorderItemsByIndex, reorderChildFoldersByIndex, LIST_TYPES,
+  getFolder, getFolders, getChildFolders, addItem, updateItem, deleteItem, moveItem, copyItem, moveItemToRoot, copyItemToRoot, moveFolder, copyFolder, addFolder, updateFolder, deleteFolder, reorderChecklist, reorderItemsByIndex, reorderChildFoldersByIndex, LIST_TYPES,
 } from '@/lib/store';
+import { parentOf } from '@/lib/itemKinds';
 import AlbumView from '@/components/AlbumView';
 import FolderEditModal from '@/components/FolderEditModal';
 import FolderPicker from '@/components/FolderPicker';
@@ -68,13 +69,19 @@ export default function FolderDetail() {
     refresh();
   };
 
+  const parentOfItem = (itemId) => {
+    const it = (getFolder(id)?.items || []).find((x) => x.id === itemId);
+    return parentOf(it?.kind, folder.type);
+  };
   const handleMoveItem = (itemId, toFolderId) => {
-    moveItem(id, itemId, toFolderId);
+    if (toFolderId) moveItem(id, itemId, toFolderId); // into a folder
+    else moveItemToRoot(id, itemId, parentOfItem(itemId)); // stands alone on the main page
     refresh();
   };
 
   const handleCopyItem = (itemId, toFolderId) => {
-    copyItem(id, itemId, toFolderId);
+    if (toFolderId) copyItem(id, itemId, toFolderId);
+    else copyItemToRoot(id, itemId, parentOfItem(itemId));
     refresh();
   };
 
@@ -92,10 +99,10 @@ export default function FolderDetail() {
   const handleFolderPicker = (targetId) => {
     if (!picker) return;
     if (picker.mode === 'move') {
-      moveFolder(id, targetId);
+      const ok = moveFolder(id, targetId);
       setPicker(null);
       refresh();
-      if (!targetId) navigate('/');
+      if (ok) navigate(targetId ? `/folder/${targetId}` : '/'); // follow it to where it went
     } else {
       copyFolder(id, targetId);
       setPicker(null);
@@ -278,8 +285,12 @@ export default function FolderDetail() {
       />
       <FolderPicker
         open={!!picker}
-        title={picker?.mode === 'copy' ? 'copy to' : 'move to'}
-        allowMainPage
+        title={picker?.mode === 'copy' ? 'copy folder to' : 'move folder to'}
+        kind="folder"
+        mode={picker?.mode === 'copy' ? 'copy' : 'move'}
+        movingFolderIds={[id]}
+        currentContainerId={folder.parent_id || null}
+        currentIsRoot={!folder.parent_id}
         onClose={() => setPicker(null)}
         onSelect={handleFolderPicker}
       />
@@ -292,6 +303,7 @@ export default function FolderDetail() {
           item={editingItem}
           folderType={folder.type}
           folderId={id}
+          atRoot={false}
           onClose={() => setEditingItem(null)}
           onSave={(updates) => { handleUpdateItem(editingItem.id, updates); setEditingItem(null); }}
           onDelete={() => { handleDeleteItem(editingItem.id); setEditingItem(null); }}

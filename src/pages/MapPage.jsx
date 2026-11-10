@@ -9,7 +9,7 @@ import ImageUpload from '@/components/ImageUpload';
 import ColorPicker from '@/components/ColorPicker';
 import { useSync } from '@/lib/SyncContext';
 import { cn } from '@/lib/utils';
-import { resolveCoords, parseManualCoords } from '@/lib/mapsResolve';
+import { resolveCoords, parseManualCoords, geocode, getLastHint } from '@/lib/mapsResolve';
 import { fitPoints, clampZoom, TILE, MIN_ZOOM, MAX_ZOOM } from '@/lib/mapView';
 import { buildPins } from '@/components/MapPins';
 import { WifiOff } from 'lucide-react';
@@ -286,7 +286,7 @@ export default function MapPage() {
             // directly (tap-and-hold a spot in Google Maps, copy the
             // "lat, lng" shown at the bottom).
             setResolveResult('failed');
-            setPickFor({ folderId: realFolderId, placeId: targetPlaceId, name: data.name });
+            setPickFor({ folderId: realFolderId, placeId: targetPlaceId, name: data.name, hint: getLastHint() || data.address || '' });
           }
         })
         .catch((err) => { console.error('place geocoding failed', err); setResolveResult('failed'); })
@@ -438,6 +438,12 @@ export default function MapPage() {
           <div className="absolute left-2 right-12 top-2 z-[6] flex items-center gap-2 px-3 py-2 rounded-2xl bg-black/85 text-white text-[11px] lowercase shadow-lg">
             <Crosshair className="w-3.5 h-3.5 shrink-0" />
             <span className="flex-1 leading-snug">tap the map exactly where "{pickFor.name || 'this place'}" is — zoom in first for precision</span>
+            {pickFor.hint && (
+              <button type="button" className="touch-44 px-2 underline" onClick={async () => {
+                const g = await geocode(pickFor.hint);
+                if (g) { setZoom(12); setCenter([g.lat, g.lng]); }
+              }}>find</button>
+            )}
             <button type="button" onClick={() => setPickFor(null)} className="touch-44 px-2 text-white/70">cancel</button>
           </div>
         )}

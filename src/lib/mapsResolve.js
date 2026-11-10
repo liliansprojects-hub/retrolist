@@ -177,6 +177,10 @@ export async function geocode(query, { fetch: fetchFn = defaultFetch, ms = 2500 
   return null;
 }
 
+// a place name the resolver found in an unresolvable link — only ever offered as a search SUGGESTION, never plotted
+let lastHint = null;
+export const getLastHint = () => lastHint;
+
 // our own server-side function — the one approach that can actually follow a
 // Google short link (see header comment)
 async function serverResolve(link, fetchFn, ms) {
@@ -184,10 +188,11 @@ async function serverResolve(link, fetchFn, ms) {
     const res = await fetchWithTimeout(fetchFn, `${FUNCTION_PATH}?url=${encodeURIComponent(link)}`, {}, ms);
     if (!res.ok) return null;
     const json = await res.json(); // throws on the SPA's index.html fallback => caught => null
-    if (json && json.found) {
+    if (json && json.found && !json.approx) {
       const c = pair(json.lat, json.lng);
-      if (c && !isDefaultSpot(c)) return { ...c, source: 'server', approx: !!json.approx };
+      if (c && !isDefaultSpot(c)) return { ...c, source: 'server', approx: false };
     }
+    if (json && json.hint) lastHint = json.hint;
   } catch { /* function not deployed / errored */ }
   return null;
 }
@@ -210,6 +215,7 @@ async function proxyResolve(link, fetchFn, ms) {
 }
 
 export async function resolveCoords({ url, address, name } = {}, { budgetMs = 3000, fetch: fetchFn = defaultFetch } = {}) {
+  lastHint = null;
   const link = (url || '').trim();
   const parsed = link ? parseMapsUrl(link) : null;
 
@@ -228,7 +234,8 @@ export async function resolveCoords({ url, address, name } = {}, { budgetMs = 30
   const PLACEHOLDER = /^(unnamed place|unnamed|place|new place)$/i;
   const ownName = !link && name && !PLACEHOLDER.test(String(name).trim()) ? name : null;
   const queries = [];
-  for (const q of [address, parsed && parsed.placeName, ownName]) {
+  if (parsed && parsed.placeName) lastHint = parsed.placeName;
+  for (const q of [address, ownName]) {
     const t = (q || '').trim();
     if (t && !queries.includes(t)) queries.push(t);
   }

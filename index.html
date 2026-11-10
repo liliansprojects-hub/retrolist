@@ -6,6 +6,9 @@
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta name="theme-color" content="#ffffff" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,300..900;1,300..900&family=Quicksand:wght@300..700&family=Inter:wght@300..700&display=swap" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/ios/180.png" />
     <title>Base44 APP</title>
@@ -16,9 +19,10 @@
       #splash img { width: 160px; height: 160px; object-fit: contain; }
     </style>
   </head>
-  <body>
+  <body style="background:#ffffff">
+    <div id="splash" aria-hidden="true"><img src="/android/launchericon-512x512.png" alt="" width="160" height="160" decoding="sync" /></div>
+    <script>window.__splashStart = Date.now();</script>
     <div id="root"></div>
-    <div id="splash" aria-hidden="true"><img src="/android/launchericon-512x512.png" alt="" width="160" height="160" /></div>
     <script type="module" src="/src/main.jsx"></script>
     <script>
       if ('serviceWorker' in navigator) {

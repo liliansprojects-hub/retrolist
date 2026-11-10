@@ -5,61 +5,32 @@ import MediaUploader from './MediaUploader';
 import FolderPicker from './FolderPicker';
 import ShareDialog from './ShareDialog';
 import { cn } from '@/lib/utils';
-
-const defaultKind = (folderType) => ({
-  todo: 'todo', list: 'list', book: 'book', movie: 'movie', aspiration: 'aspiration',
-  habit: 'habit', hobby: 'hobby', place: 'place',
-}[folderType] || 'list');
-
-const KIND_LABELS = {
-  todo: 'todo', checklist: 'checklist', list: 'list', movie: 'movie', series: 'series',
-  drama: 'drama', book: 'book', audiobook: 'audiobook', magazine: 'magazine', article: 'article',
-  aspiration: 'goal', role: 'role', programme: 'programme', course: 'course',
-  exercise: 'exercise', saving: 'saving', habit: 'habit', hobby: 'hobby',
-  interest: 'interest', sport: 'sport', arts: 'arts', language: 'language', skills: 'skills', place: 'place',
-};
-
-const KIND_META = {
-  todo: { name: 'to-do', sub: 'subheading' },
-  checklist: { name: 'checklist item', sub: 'subheading' },
-  list: { name: 'item', sub: 'subheading' },
-  note: { name: 'note', sub: 'subheading' },
-  movie: { name: 'movie title', sub: 'director' },
-  series: { name: 'series title', sub: 'subheading' },
-  drama: { name: 'drama title', sub: 'subheading' },
-  book: { name: 'book title', sub: 'author' },
-  audiobook: { name: 'audiobook title', sub: 'author' },
-  magazine: { name: 'magazine', sub: 'issue' },
-  article: { name: 'article title', sub: 'source' },
-  aspiration: { name: 'goal', sub: 'subheading' },
-  role: { name: 'role', sub: 'subheading' },
-  programme: { name: 'programme', sub: 'subheading' },
-  course: { name: 'course', sub: 'subheading' },
-  exercise: { name: 'exercise', sub: 'target' },
-  saving: { name: 'saving goal', sub: 'subheading' },
-  habit: { name: 'habit', sub: 'subheading' },
-  hobby: { name: 'hobby', sub: 'subheading' },
-  interest: { name: 'interest', sub: 'subheading' },
-  sport: { name: 'sport', sub: 'subheading' },
-  arts: { name: 'art form', sub: 'subheading' },
-  language: { name: 'language', sub: 'subheading' },
-  skills: { name: 'skill', sub: 'subheading' },
-  place: { name: 'place name', sub: 'subheading' },
-};
+import { getSettings, saveSettings } from '@/lib/store';
+import { KINDS, PARENTS, CHIP_PARENTS, CUSTOM_ICONS, MORE_ICON, kindInfo, parentOf, defaultKindFor, subKindsOf } from '@/lib/itemKinds';
 
 // separate-window item editor: name + subheading + type-specific fields (year,
 // date/month, reps/times, amount), notes, colour, photos/files, link, and
 // move/copy/share. items are leaf nodes — nothing can be added inside them,
 // only edited or deleted.
-export default function ItemEditor({ item, folderType, onClose, onSave, onDelete, onMove, onCopy }) {
-  const kind = item.kind || defaultKind(folderType);
+// every extra box any kind can use; their values live on the item under these keys
+const EXTRA_KEYS = ['year', 'date', 'times', 'reps', 'amount', 'cycle', 'level', 'endDate', 'code', 'credits', 'grade', 'servings', 'prepTime', 'cookTime', 'ingredients', 'courses', 'category', 'status', 'priority', 'startDate', 'dueDate'];
+
+export default function ItemEditor({ item, folderType, folderId, atRoot = false, onClose, onSave, onDelete, onMove, onCopy }) {
+  const [kind, setKind] = useState(item.kind || defaultKindFor(folderType));
+  const [customLabel, setCustomLabel] = useState(item.customLabel || '');
+  const [customIcon, setCustomIcon] = useState(item.customIcon || 'sparkles');
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreName, setMoreName] = useState('');
+  const [moreIcon, setMoreIcon] = useState('sparkles');
+  const [saved, setSaved] = useState(() => getSettings().customSubtypes || {});
+  const [extra, setExtra] = useState(() => { const o = {}; EXTRA_KEYS.forEach((k) => { o[k] = item[k] ?? ''; }); return o; });
+  const setX = (k, v) => setExtra((x) => ({ ...x, [k]: v }));
+  const parent = item.parentType || parentOf(kind === 'custom' ? null : kind, folderType);
+  const info = kindInfo({ ...item, kind, customLabel, customIcon, parentType: parent }, folderType);
+  const KIND_LABELS = { [kind]: info.label };
+  const KIND_META = { [kind]: { name: info.name, sub: info.sub } };
   const [text, setText] = useState(item.text || '');
   const [subheading, setSubheading] = useState(item.subheading || '');
-  const [year, setYear] = useState(item.year || '');
-  const [date, setDate] = useState(item.date || '');
-  const [reps, setReps] = useState(item.reps || '');
-  const [times, setTimes] = useState(item.times || '');
-  const [amount, setAmount] = useState(item.amount || '');
   const [notes, setNotes] = useState(item.notes || item.body || '');
   const [color, setColor] = useState(item.color || '');
   const [url, setUrl] = useState(item.url || '');
@@ -72,14 +43,10 @@ export default function ItemEditor({ item, folderType, onClose, onSave, onDelete
   const [shareOpen, setShareOpen] = useState(false);
 
   const isTodoish = kind === 'todo' || kind === 'checklist';
-  const showSubheading = ['list', 'note', 'movie', 'series', 'drama', 'book', 'audiobook', 'magazine', 'article', 'hobby', 'interest', 'sport', 'arts', 'language', 'skills', 'place', 'exercise', 'saving', 'habit', 'aspiration', 'role', 'programme', 'course'].includes(kind);
-  const showYear = ['movie', 'series', 'drama', 'book', 'audiobook', 'magazine', 'article'].includes(kind);
-  const showDate = ['aspiration', 'role', 'programme', 'course'].includes(kind);
-  const showReps = kind === 'exercise';
-  const showAmount = kind === 'saving';
+  const showSubheading = !isTodoish || true;
   const canUrl = true;
 
-  const draft = { text, subheading, year, date, reps, times, amount, notes: notes, body: notes, color, url, media, done, kind, style, itemHeight };
+  const draft = { text, subheading, ...extra, notes: notes, body: notes, color, url, media, done, kind, parentType: parent, customLabel: kind === 'custom' ? customLabel : undefined, customIcon: kind === 'custom' ? customIcon : undefined, style, itemHeight };
 
   // this editor previously only wrote anything on an explicit "save" tap —
   // fine when the user reliably reaches that button, but if the app gets
@@ -100,7 +67,7 @@ export default function ItemEditor({ item, folderType, onClose, onSave, onDelete
     autosaveTimer.current = setTimeout(() => onSave(draftRef.current), 400);
     return () => clearTimeout(autosaveTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, subheading, year, date, reps, times, amount, notes, color, url, media, done, style, itemHeight]);
+  }, [text, subheading, extra, kind, customLabel, customIcon, notes, color, url, media, done, style, itemHeight]);
   useEffect(() => () => clearTimeout(autosaveTimer.current), []);
 
   // move/copy is deferred until "save" is pressed — the chosen target is held
@@ -126,7 +93,7 @@ export default function ItemEditor({ item, folderType, onClose, onSave, onDelete
       <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto no-scrollbar bg-card rounded-t-3xl sm:rounded-3xl border border-border p-5 pb-8 animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <button onClick={cancel} className="touch-44 flex items-center gap-1 text-xs font-medium lowercase text-muted-foreground"><ChevronLeft className="w-4 h-4" /> back</button>
-          <h3 className="text-sm font-semibold lowercase">{item.__isNew ? 'new ' + (KIND_LABELS[kind] || 'item') : 'edit item'}</h3>
+          <h3 className="text-sm font-semibold lowercase">{item.__isNew ? 'new ' + (info.label || 'item') : 'edit ' + (info.label || 'item')}</h3>
           <button onClick={() => onDelete()} className="touch-44 p-1 rounded-full text-destructive"><Trash2 className="w-4 h-4" /></button>
         </div>
 
@@ -140,26 +107,101 @@ export default function ItemEditor({ item, folderType, onClose, onSave, onDelete
             </div>
           )}
 
+          {CHIP_PARENTS.includes(parent) && (
+            <div>
+              <span className="text-[11px] text-muted-foreground lowercase block mb-1.5">type of {PARENTS[parent].label.replace(/s$/, '')}</span>
+              <div className="flex flex-wrap gap-1.5">
+                {subKindsOf(parent).map((o) => (
+                  <button key={o.kind} onClick={() => { setKind(o.kind); setMoreOpen(false); }} className={cn('touch-44 flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs lowercase', kind === o.kind ? 'bg-foreground text-background border-foreground' : 'bg-background border-border')}>
+                    <o.icon className="w-3.5 h-3.5" /> {o.label}
+                  </button>
+                ))}
+                {(saved[parent] || []).map((c) => {
+                  const CI = CUSTOM_ICONS[c.icon] || CUSTOM_ICONS.sparkles;
+                  const on = kind === 'custom' && customLabel === c.label;
+                  return (
+                    <button key={c.label} onClick={() => { setKind('custom'); setCustomLabel(c.label); setCustomIcon(c.icon); setMoreOpen(false); }} className={cn('touch-44 flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs lowercase', on ? 'bg-foreground text-background border-foreground' : 'bg-background border-border')}>
+                      <CI className="w-3.5 h-3.5" /> {c.label}
+                    </button>
+                  );
+                })}
+                <button onClick={() => setMoreOpen((m) => !m)} className={cn('touch-44 flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-dashed text-xs lowercase', moreOpen ? 'bg-muted' : 'bg-background border-border')}>
+                  <MORE_ICON className="w-3.5 h-3.5" /> more
+                </button>
+              </div>
+              {moreOpen && (
+                <div className="mt-2 p-3 rounded-2xl bg-muted/60 space-y-2">
+                  <input value={moreName} onChange={(e) => setMoreName(e.target.value)} placeholder="name your own type (e.g. gardening)" className="w-full px-3 py-2 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(CUSTOM_ICONS).map(([key, Ic]) => (
+                      <button key={key} onClick={() => setMoreIcon(key)} className={cn('touch-44 w-9 h-9 rounded-xl flex items-center justify-center border', moreIcon === key ? 'bg-foreground text-background border-foreground' : 'bg-background border-border')}><Ic className="w-4 h-4" /></button>
+                    ))}
+                  </div>
+                  <button
+                    disabled={!moreName.trim()}
+                    onClick={() => {
+                      const label = moreName.trim().toLowerCase();
+                      const next = { ...saved, [parent]: [...(saved[parent] || []).filter((c) => c.label !== label), { label, icon: moreIcon }] };
+                      setSaved(next); saveSettings({ customSubtypes: next });
+                      setKind('custom'); setCustomLabel(label); setCustomIcon(moreIcon); setMoreName(''); setMoreOpen(false);
+                    }}
+                    className="touch-44 w-full py-2 rounded-xl bg-foreground text-background text-xs font-medium lowercase disabled:opacity-30"
+                  >add this type</button>
+                </div>
+              )}
+              {kind === 'custom' && (saved[parent] || []).some((c) => c.label === customLabel) && (
+                <button onClick={() => { const next = { ...saved, [parent]: (saved[parent] || []).filter((c) => c.label !== customLabel) }; setSaved(next); saveSettings({ customSubtypes: next }); setKind(defaultKindFor(parent)); }} className="mt-1.5 text-[11px] text-muted-foreground underline lowercase">remove "{customLabel}" from my types</button>
+              )}
+            </div>
+          )}
+
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder={KIND_META[kind]?.name || 'name'} autoFocus className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm font-semibold outline-none focus:border-foreground" />
 
           {showSubheading && (
             <input value={subheading} onChange={(e) => setSubheading(e.target.value)} placeholder={KIND_META[kind]?.sub || 'subheading'} className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
           )}
-          {showYear && (
-            <input value={year} onChange={(e) => setYear(e.target.value)} placeholder="year" inputMode="numeric" className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
-          )}
-          {showDate && (
-            <input value={date} onChange={(e) => setDate(e.target.value)} placeholder="date / month (e.g. aug 2026)" className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
-          )}
-          {showReps && (
-            <div className="flex gap-2">
-              <input value={reps} onChange={(e) => setReps(e.target.value)} placeholder="reps" inputMode="numeric" className="flex-1 px-2 py-2 rounded-lg bg-background border border-border text-xs outline-none focus:border-foreground" />
-              <input value={times} onChange={(e) => setTimes(e.target.value)} placeholder="sets" inputMode="numeric" className="flex-1 px-2 py-2 rounded-lg bg-background border border-border text-xs outline-none focus:border-foreground" />
+          {info.fields.filter((f) => f.type !== 'textarea').length > 0 && (
+            <div className="grid grid-cols-2 gap-2">
+              {info.fields.filter((f) => f.type !== 'textarea').map((f) => {
+                const box = 'w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground';
+                if (f.type === 'pair') {
+                  return (
+                    <div key={f.key} className="col-span-2">
+                      <span className="text-[11px] text-muted-foreground lowercase block mb-1">{f.label}</span>
+                      <div className="flex items-center gap-2">
+                        <input value={extra[f.key]} onChange={(e) => setX(f.key, e.target.value)} placeholder="times" inputMode="numeric" className={box} />
+                        <span className="text-sm text-muted-foreground">×</span>
+                        <input value={extra[f.key2]} onChange={(e) => setX(f.key2, e.target.value)} placeholder="reps" inputMode="numeric" className={box} />
+                      </div>
+                    </div>
+                  );
+                }
+                if (f.type === 'select') {
+                  return (
+                    <div key={f.key}>
+                      <span className="text-[11px] text-muted-foreground lowercase block mb-1">{f.label}</span>
+                      <select value={extra[f.key]} onChange={(e) => setX(f.key, e.target.value)} className={box + ' lowercase'}>
+                        <option value="">–</option>
+                        {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={f.key} className={f.type === 'text' && f.label.length > 18 ? 'col-span-2' : ''}>
+                    <span className="text-[11px] text-muted-foreground lowercase block mb-1">{f.label}</span>
+                    <input type={f.type === 'date' ? 'date' : 'text'} value={extra[f.key]} onChange={(e) => setX(f.key, e.target.value)} inputMode={f.type === 'number' ? 'decimal' : undefined} className={box} />
+                  </div>
+                );
+              })}
             </div>
           )}
-          {showAmount && (
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="amount (£)" inputMode="decimal" className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
-          )}
+          {info.fields.filter((f) => f.type === 'textarea').map((f) => (
+            <div key={f.key}>
+              <span className="text-[11px] text-muted-foreground lowercase block mb-1">{f.label}</span>
+              <textarea value={extra[f.key]} onChange={(e) => setX(f.key, e.target.value)} rows={3} className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground resize-none selectable" />
+            </div>
+          ))}
 
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="notes…" rows={4} className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground resize-none selectable" />
 
@@ -200,7 +242,7 @@ export default function ItemEditor({ item, folderType, onClose, onSave, onDelete
 
           {pendingAction && (
             <div className="px-3 py-2 rounded-xl bg-muted text-xs lowercase text-center text-muted-foreground">
-              will {pendingAction.type} to new spot on save
+              will {pendingAction.type} to {pendingAction.targetName || 'the new spot'} when you press save
             </div>
           )}
 
@@ -218,12 +260,14 @@ export default function ItemEditor({ item, folderType, onClose, onSave, onDelete
 
         <FolderPicker
           open={!!picker}
-          title={picker === 'copy' ? 'copy to' : 'move to'}
-          allowMainPage={false}
-          excludeTypes={['note', 'album']}
+          title={picker === 'copy' ? 'copy item to' : 'move item to'}
+          kind="item"
+          mode={picker === 'copy' ? 'copy' : 'move'}
+          currentContainerId={folderId || null}
+          currentIsRoot={atRoot}
           onClose={() => setPicker(null)}
-          onSelect={(targetId) => {
-            setPendingAction({ type: picker, targetId });
+          onSelect={(targetId, targetName) => {
+            setPendingAction({ type: picker, targetId, targetName });
             setPicker(null);
           }}
         />

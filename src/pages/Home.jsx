@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import {
   CheckSquare, List, Star, MapPin, Bell, StickyNote, Palette, Repeat,
   Calendar, CalendarClock, Book, Film, Map as MapIcon, BookHeart, Share2, Pencil, Trash2,
-  LayoutGrid, ChevronRight, ChevronDown, Folder, FolderPlus, FolderInput, Copy, Images, Search, Pin, ArrowDownUp, X,
+  LayoutGrid, GraduationCap, ChefHat, FolderKanban, CheckCheck, ChevronRight, ChevronDown, Folder, FolderPlus, FolderInput, Copy, Images, Search, Pin, ArrowDownUp, X,
 } from 'lucide-react';
 import {
   getFolders, getRootFolders, addFolder, updateFolder, reorderFolders, deleteFolder, moveFolder, copyFolder,
-  addItem, updateItem, deleteItem,
+  addItem, updateItem, deleteItem, moveItem, copyItem, saveFolders,
   getProfile, addEvent, getSettings, saveSettings, LIST_TYPES,
 } from '@/lib/store';
 import FolderCard from '@/components/FolderCard';
@@ -20,6 +20,7 @@ import ReminderModal from '@/components/ReminderModal';
 import ShareDialog from '@/components/ShareDialog';
 import ItemEditor from '@/components/ItemEditor';
 import { ALL_ITEM_KINDS } from '@/components/AddItemPicker';
+import { PARENTS, KINDS } from '@/lib/itemKinds';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -41,6 +42,13 @@ export default function Home() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [movePicker, setMovePicker] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [notice, setNotice] = useState(null); // { text, undo? }
+  const noticeTimer = React.useRef(null);
+  const showNotice = (n, ms = 7000) => { setNotice(n); clearTimeout(noticeTimer.current); noticeTimer.current = setTimeout(() => setNotice(null), ms); };
 
   const refresh = () => {
     setFolders(getRootFolders());
@@ -68,6 +76,9 @@ export default function Home() {
     { label: 'aspiration', value: 'aspiration', icon: Star },
     { label: 'hobby', value: 'hobby', icon: Palette },
     { label: 'habit', value: 'habit', icon: Repeat },
+    { label: 'education', value: 'education', icon: GraduationCap },
+    { label: 'cooking', value: 'cooking', icon: ChefHat },
+    { label: 'project', value: 'project', icon: FolderKanban },
     { label: 'map', value: 'map_folder', icon: MapIcon },
     { label: 'journal', value: 'journal', icon: BookHeart },
   ];
@@ -85,12 +96,13 @@ export default function Home() {
   // ring is exactly what made it messy. picking one representative kind per
   // concept keeps the ring small enough to fit without the crowding-related
   // inner/outer sub-ring split ever needing to kick in.
-  const WHEEL_ITEM_KINDS = ['todo', 'checklist', 'list', 'note', 'movie', 'book', 'aspiration', 'habit', 'hobby', 'place'];
+  // the outer ring holds only the PARENT item types; their sub-types (exercise,
+  // subscription, recipe, milestone …) are chosen inside the item's own editor
   const wheelGroups = [
     { title: 'lists & folders', items: WHEEL_LIST_OPTIONS },
-    { title: 'items', items: ALL_ITEM_KINDS.filter((it) => WHEEL_ITEM_KINDS.includes(it.kind)).map((it) => ({ label: it.kind === 'aspiration' ? 'aspiration' : it.label, value: it.kind, icon: it.icon })) },
+    { title: 'items', items: Object.values(PARENTS).map((p) => ({ label: p.label, value: p.kind, icon: p.icon })) },
   ];
-  const ITEM_PARENT = { todo: 'todo', checklist: 'todo', list: 'list', note: 'list', movie: 'movie', series: 'movie', drama: 'movie', book: 'book', audiobook: 'book', magazine: 'book', article: 'book', aspiration: 'aspiration', role: 'aspiration', programme: 'aspiration', course: 'aspiration', exercise: 'habit', saving: 'habit', habit: 'habit', hobby: 'hobby', interest: 'hobby', sport: 'hobby', arts: 'hobby', language: 'hobby', skills: 'hobby', place: 'place' };
+  const ITEM_PARENT = Object.fromEntries(Object.entries(KINDS).map(([kk, v]) => [kk, v.parent]));
   const ITEM_KINDS = new Set(ALL_ITEM_KINDS.map((it) => it.kind));
 
   const handleSelect = (value, groupIdx) => {
@@ -120,7 +132,7 @@ export default function Home() {
 
   const createItemFlow = (kind) => {
     const parentType = ITEM_PARENT[kind] || 'list';
-    const label = ALL_ITEM_KINDS.find((it) => it.kind === kind)?.label || kind;
+    const label = PARENTS[parentType]?.label || ALL_ITEM_KINDS.find((it) => it.kind === kind)?.label || kind;
     const folder = addFolder({ name: 'new ' + label, type: parentType, size: 'portrait', isItemBlock: true });
     const it = addItem(folder.id, { text: '', kind });
     setEditingItem({ folderId: folder.id, item: { ...it, __isNew: true } });
@@ -185,6 +197,44 @@ export default function Home() {
     const next = layout === 'blocks' ? 'list' : 'blocks';
     saveSettings({ homeLayout: next });
     setLayout(next);
+  };
+
+  const exitSelect = () => { setSelectMode(false); setSelectedIds([]); setMovePicker(false); setConfirmDelete(false); };
+  const toggleSelected = (id) => setSelectedIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  const toggleItemDone = (block) => { const it = (block.items || [])[0]; if (!it) return; updateItem(block.id, it.id, { done: !it.done }); refresh(); };
+
+  const selectedFolders = () => folders.filter((f) => selectedIds.includes(f.id));
+
+  // every folder under the given ones (so deleting a folder doesn't strand its sub-folders)
+  const withDescendants = (ids) => {
+    const all = getFolders();
+    const out = new Set(ids);
+    let grew = true;
+    while (grew) { grew = false; all.forEach((f) => { if (f.parent_id && out.has(f.parent_id) && !out.has(f.id)) { out.add(f.id); grew = true; } }); }
+    return [...out];
+  };
+
+  const doMoveSelected = (targetId, targetName) => {
+    let ok = 0; let fail = 0;
+    selectedFolders().forEach((f) => {
+      const moved = f.isItemBlock ? moveItem(f.id, (f.items || [])[0]?.id, targetId) : moveFolder(f.id, targetId);
+      if (moved) ok++; else fail++;
+    });
+    setMovePicker(false);
+    exitSelect();
+    refresh();
+    showNotice({ text: fail ? `moved ${ok} to ${targetName} · ${fail} couldn't be moved` : `moved ${ok} to ${targetName}` }, 4000);
+  };
+
+  const doDeleteSelected = () => {
+    const snapshot = getFolders();
+    const ids = withDescendants(selectedIds);
+    ids.forEach((id) => deleteFolder(id));
+    const n = selectedIds.length;
+    setConfirmDelete(false);
+    exitSelect();
+    refresh();
+    showNotice({ text: `${n} deleted`, undo: () => { saveFolders(snapshot); refresh(); setNotice(null); } }, 8000);
   };
 
   const TYPE_MAP = { notes: 'note', reminders: 'reminder', todos: 'todo', folders: 'folder', albums: 'album' };
@@ -309,7 +359,15 @@ export default function Home() {
               </>
             )}
           </div>
-          {layout === 'blocks' && visibleFolders.length > 0 && (
+          {visibleFolders.length > 0 && (
+            <button
+              onClick={() => { if (selectMode) exitSelect(); else { setSelectMode(true); setEditMode(false); } }}
+              className={`touch-44 shrink-0 flex items-center gap-1 px-3 h-7 rounded-full text-[10px] font-medium lowercase ${selectMode ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`}
+            >
+              <CheckCheck className="w-3 h-3" /> {selectMode ? 'cancel' : 'select'}
+            </button>
+          )}
+          {layout === 'blocks' && visibleFolders.length > 0 && !selectMode && (
             <button
               onClick={() => setEditMode((e) => !e)}
               className={`touch-44 shrink-0 flex items-center gap-1 px-3 h-7 rounded-full text-[10px] font-medium lowercase ${editMode ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`}
@@ -318,6 +376,9 @@ export default function Home() {
             </button>
           )}
         </div>
+      )}
+      {selectMode && (
+        <p className="mb-3 text-[11px] text-muted-foreground lowercase">tap blocks to select · then move them into a folder or delete</p>
       )}
       {editMode && layout === 'blocks' && folders.length !== 0 && (
         <p className="mb-3 text-[11px] text-muted-foreground lowercase">drag any edge to resize · others auto-shift</p>
@@ -342,11 +403,15 @@ export default function Home() {
             <MasonryGrid
               folders={visibleFolders}
               editMode={editMode}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              onToggleItem={toggleItemDone}
               onResize={(id, data) => { updateFolder(id, data); refresh(); }}
               onReorder={(orderMap) => { reorderFolders(orderMap); refresh(); }}
               onOpen={(id) => {
                 const f = folders.find((x) => x.id === id);
                 if (!f) return;
+                if (selectMode) { toggleSelected(id); return; }
                 if (f.isItemBlock) { setEditingItem({ folderId: f.id, item: (f.items || [])[0] }); return; }
                 if (f.type === 'reminder') { setReminderFolder(f); setReminderOpen(true); }
                 else navigate(`/folder/${id}`);
@@ -356,7 +421,7 @@ export default function Home() {
           ) : (
             <div className="space-y-2">
               {visibleFolders.map((f) => (
-                <button key={f.id} onClick={() => { if (f.type === 'reminder') { setReminderFolder(f); setReminderOpen(true); } else navigate(`/folder/${f.id}`); }} className="w-full flex items-center gap-3 p-3 rounded-2xl border border-border bg-card active:scale-[0.98] transition-transform text-left">
+                <button key={f.id} onClick={() => { if (selectMode) { toggleSelected(f.id); return; } if (f.isItemBlock) { setEditingItem({ folderId: f.id, item: (f.items || [])[0] }); return; } if (f.type === 'reminder') { setReminderFolder(f); setReminderOpen(true); } else navigate(`/folder/${f.id}`); }} className={`w-full flex items-center gap-3 p-3 rounded-2xl border bg-card active:scale-[0.98] transition-transform text-left ${selectMode && selectedIds.includes(f.id) ? 'border-foreground ring-2 ring-foreground' : 'border-border'}`}>
                   <span className="w-9 h-9 rounded-xl border-2 border-foreground/40 flex items-center justify-center shrink-0 relative">
                     <Folder className="w-5 h-5 text-foreground/70" strokeWidth={1.75} />
                     {f.pinned && <Pin className="w-3 h-3 absolute -top-1 -right-1 text-foreground fill-foreground" />}
@@ -373,7 +438,53 @@ export default function Home() {
         </>
       )}
 
-      <PlusWheel groups={wheelGroups} onSelect={handleSelect} />
+      {!selectMode && <PlusWheel groups={wheelGroups} onSelect={handleSelect} />}
+
+      {selectMode && (
+        <div className="fixed left-0 right-0 z-40 px-4" style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5.5rem)' }}>
+          <div className="mx-auto max-w-lg flex items-center gap-2 p-2 rounded-3xl bg-foreground text-background shadow-xl">
+            <span className="px-3 text-xs lowercase flex-1">{selectedIds.length} selected</span>
+            <button onClick={() => setSelectedIds(visibleFolders.map((f) => f.id))} className="touch-44 px-3 h-10 rounded-2xl text-xs lowercase text-background/80">all</button>
+            <button disabled={!selectedIds.length} onClick={() => setMovePicker(true)} className="touch-44 flex items-center gap-1.5 px-4 h-10 rounded-2xl bg-background text-foreground text-xs font-medium lowercase disabled:opacity-30"><FolderInput className="w-4 h-4" /> move</button>
+            <button disabled={!selectedIds.length} onClick={() => setConfirmDelete(true)} className="touch-44 flex items-center gap-1.5 px-4 h-10 rounded-2xl bg-destructive text-destructive-foreground text-xs font-medium lowercase disabled:opacity-30"><Trash2 className="w-4 h-4" /> bin</button>
+          </div>
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center px-6" onClick={() => setConfirmDelete(false)}>
+          <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
+          <div className="relative w-full max-w-xs rounded-3xl bg-card border border-border p-5 text-center" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-semibold lowercase mb-1">move {selectedIds.length} to the bin?</p>
+            <p className="text-xs text-muted-foreground lowercase mb-4">folders take everything inside them too. you can undo for a few seconds.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDelete(false)} className="touch-44 flex-1 py-2.5 rounded-2xl bg-muted text-xs font-medium lowercase">keep</button>
+              <button onClick={doDeleteSelected} className="touch-44 flex-1 py-2.5 rounded-2xl bg-destructive text-destructive-foreground text-xs font-medium lowercase">delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {notice && (
+        <div className="fixed left-0 right-0 z-[70] px-4" style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 9rem)' }}>
+          <div className="mx-auto max-w-sm flex items-center gap-3 px-4 py-3 rounded-2xl bg-foreground text-background text-xs lowercase shadow-xl">
+            <span className="flex-1">{notice.text}</span>
+            {notice.undo && <button onClick={notice.undo} className="touch-44 font-semibold underline">undo</button>}
+          </div>
+        </div>
+      )}
+
+      <FolderPicker
+        open={movePicker}
+        title={`move ${selectedIds.length} to`}
+        kind={selectedFolders().length > 0 && selectedFolders().every((f) => f.isItemBlock) ? 'item' : 'folder'}
+        mode="move"
+        movingFolderIds={selectedFolders().filter((f) => !f.isItemBlock).map((f) => f.id)}
+        currentContainerId={null}
+        currentIsRoot
+        onClose={() => setMovePicker(false)}
+        onSelect={doMoveSelected}
+      />
 
       <FolderEditModal
         open={!!createType}
@@ -417,23 +528,32 @@ export default function Home() {
       />
       <FolderPicker
         open={!!picker}
-        title={picker?.mode === 'copy' ? 'copy to' : 'move to'}
-        allowMainPage
+        title={picker?.mode === 'copy' ? 'copy folder to' : 'move folder to'}
+        kind="folder"
+        mode={picker?.mode === 'copy' ? 'copy' : 'move'}
+        movingFolderIds={picker ? [picker.folder.id] : []}
+        currentContainerId={null}
+        currentIsRoot
         onClose={() => setPicker(null)}
-        onSelect={(targetId) => {
+        onSelect={(targetId, targetName) => {
           if (!picker) return;
-          if (picker.mode === 'move') moveFolder(picker.folder.id, targetId);
+          let ok = true;
+          if (picker.mode === 'move') ok = moveFolder(picker.folder.id, targetId);
           else copyFolder(picker.folder.id, targetId);
           setPicker(null);
           refresh();
+          showNotice({ text: ok ? `${picker.mode === 'copy' ? 'copied' : 'moved'} to ${targetName}` : "couldn't move it there" }, 3500);
         }}
       />
 
       {editingItem && (
         <ItemEditor
           item={editingItem.item}
-          folderType={ITEM_PARENT[editingItem.item.kind] || 'list'}
+          folderType={getFolders().find((x) => x.id === editingItem.folderId)?.type || ITEM_PARENT[editingItem.item.kind] || 'list'}
           folderId={editingItem.folderId}
+          atRoot
+          onMove={(itemId, toId) => { if (toId) { const ok = moveItem(editingItem.folderId, itemId, toId); setEditingItem(null); refresh(); showNotice({ text: ok ? 'item moved' : "couldn't move the item" }, 3500); } }}
+          onCopy={(itemId, toId) => { if (toId) { copyItem(editingItem.folderId, itemId, toId); refresh(); showNotice({ text: 'item copied' }, 3500); } }}
           onClose={() => setEditingItem(null)}
           onSave={(updates) => handleItemSave(updates)}
           onDelete={() => handleItemDelete()}

@@ -84,13 +84,13 @@ function packSkyline(items, containerW) {
     }
     placed.push({ id: it.id, x, y, w, h: it.h });
     lastInRow = { x, yInRow: 0, w, h: it.h };
-    x += w + GAP;
+    x += w; // no horizontal GAP: H_MARGIN already spaces blocks, and adding GAP here pushed the 2nd default block onto its own row
     if (it.h > rowH) rowH = it.h;
   }
   return placed;
 }
 
-export default function MasonryGrid({ folders, editMode, onResize, onReorder, onOpen, onMenu }) {
+export default function MasonryGrid({ folders, editMode, selectMode = false, selectedIds = [], onResize, onReorder, onOpen, onMenu, onToggleItem }) {
   const ref = useRef(null);
   const [width, setWidth] = useState(0);
   const dragRef = useRef(null);
@@ -435,9 +435,16 @@ export default function MasonryGrid({ folders, editMode, onResize, onReorder, on
           >
             <div onPointerDown={editMode ? (e) => onBodyDown(e, f, p) : undefined} className={editMode ? 'w-full h-full cursor-move' : 'w-full h-full'} style={{ touchAction: editMode ? 'none' : undefined }}>
               {full.isItemBlock ? (
-                <ItemBlock folder={full} onClick={editMode ? undefined : () => onOpen(f.id)} onMenu={editMode ? undefined : () => onMenu(full)} />
+                <ItemBlock folder={full} onClick={editMode ? undefined : () => onOpen(f.id)} onMenu={editMode || selectMode ? undefined : () => onMenu(full)} onToggle={editMode || selectMode || !onToggleItem ? undefined : () => onToggleItem(full)} />
               ) : (
-                <FolderCard fill folder={full} onClick={editMode ? undefined : () => onOpen(f.id)} onMenu={editMode ? undefined : () => onMenu(full)} />
+                <FolderCard fill folder={full} onClick={editMode ? undefined : () => onOpen(f.id)} onMenu={editMode || selectMode ? undefined : () => onMenu(full)} />
+              )}
+              {selectMode && (
+                <div className={`absolute inset-0 rounded-2xl pointer-events-none ${selectedIds.includes(f.id) ? 'ring-[3px] ring-foreground bg-foreground/10' : ''}`}>
+                  <span className={`absolute top-2 left-2 w-6 h-6 rounded-full border-2 flex items-center justify-center ${selectedIds.includes(f.id) ? 'bg-foreground border-foreground' : 'bg-background/80 border-foreground/50'}`}>
+                    {selectedIds.includes(f.id) && <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="hsl(var(--background))" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L20 7" /></svg>}
+                  </span>
+                </div>
               )}
             </div>
             {editMode && (

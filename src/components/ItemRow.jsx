@@ -1,11 +1,7 @@
 import React from 'react';
 import { Check, ChevronRight, Paperclip, Bell } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-const defaultKind = (folderType) => ({
-  todo: 'todo', list: 'list', book: 'book', movie: 'movie', aspiration: 'aspiration',
-  habit: 'habit', hobby: 'hobby', place: 'place', reminder: 'todo',
-}[folderType] || 'list');
+import { kindInfo, metaFor, showsIcon } from '@/lib/itemKinds';
 
 function readableText(hex) {
   if (!hex || hex[0] !== '#') return undefined;
@@ -22,11 +18,11 @@ function readableText(hex) {
 // colour styles: full = solid colour fill; tip (l)/(r) = a 1/6-width rounded
 // bar on one side with a semicircular inner edge (like "(" / ")").
 export default function ItemRow({ item, folderType, onUpdate, onOpen }) {
-  const kind = item.kind || defaultKind(folderType);
+  const info = kindInfo(item, folderType === 'reminder' ? 'todo' : folderType);
+  const kind = info.kind;
+  const KindIcon = info.icon;
   const isTodo = kind === 'todo';
   const isChecklist = kind === 'checklist';
-  const showYear = ['movie', 'series', 'drama', 'book', 'audiobook'].includes(kind);
-  const showDate = kind === 'aspiration';
   const mediaCount = (item.media?.length || 0) + (item.photo ? 1 : 0);
 
   const toggle = () => { if (isTodo || isChecklist) onUpdate(item.id, { done: !item.done }); };
@@ -43,15 +39,7 @@ export default function ItemRow({ item, folderType, onUpdate, onOpen }) {
     isChecklist && item.done && 'text-muted-foreground'
   );
 
-  const meta = [];
-  if (item.subheading) meta.push(item.subheading);
-  if (showYear && item.year) meta.push(item.year);
-  if (showDate && item.date) meta.push(item.date);
-  if (kind === 'exercise') {
-    if (item.reps) meta.push(item.reps + ' reps');
-    if (item.times) meta.push(item.times + ' sets');
-  }
-  if (kind === 'saving' && item.amount) meta.push('£' + item.amount);
+  const meta = metaFor(item, folderType === 'reminder' ? 'todo' : folderType);
 
   // "short" needs to read as clearly shorter regardless of what content the
   // row happens to have (a subheading/meta line can otherwise make both
@@ -92,6 +80,7 @@ export default function ItemRow({ item, folderType, onUpdate, onOpen }) {
             {item.done && <Check className="w-3.5 h-3.5 text-background" strokeWidth={3} />}
           </button>
         )}
+        {showsIcon(item, folderType) && <KindIcon className="w-4 h-4 shrink-0 opacity-60" />}
         <div className="flex-1 min-w-0 flex flex-col justify-center leading-tight">
           <input value={item.text || ''} onChange={(e) => onUpdate(item.id, { text: e.target.value })} placeholder="type something..." className={textClass} />
           {!short && (meta.length > 0 || mediaCount > 0) && (

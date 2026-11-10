@@ -92,13 +92,12 @@ async function resolve(startUrl, deadline) {
 
   if (best) return found(best, best.finalUrl || current, false);
 
-  // no coordinates anywhere — search by the place name in the URL instead
-  const name = placeNameFrom(current);
-  if (name && remaining(deadline) > 300) {
-    const g = await nominatim(name, deadline);
-    if (g) return found(g, current, true);
-  }
-  return { found: false, finalUrl: current };
+  // No exact coordinates anywhere. Do NOT guess by searching the name here: a name
+  // search has no idea which country is meant and was dropping pins in the US.
+  // Return the name only as a hint; the app lets the person tap the exact spot.
+  let hint = null;
+  try { if (/(^|\.)google\.[a-z.]+$/.test(new URL(current).hostname) && /\/maps\/(place|search)\//.test(current)) hint = placeNameFrom(current); } catch { /* ignore */ }
+  return { found: false, finalUrl: current, hint };
 }
 
 const found = (c, finalUrl, approx) => ({ found: true, lat: c.lat, lng: c.lng, approx, finalUrl });

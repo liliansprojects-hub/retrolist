@@ -129,18 +129,63 @@ export const deleteItem = (folderId, itemId) => {
 };
 
 // move an item from one folder to another (used by the "move to folder" action)
+// can this folder hold things? (notes and albums are leaf containers; an
+// "item block" on the main page is an item, not a folder)
+export const canHold = (f) => !!f && !f.isItemBlock && f.type !== 'note' && f.type !== 'album';
+
+// an item moved out of its main-page block leaves that block empty — remove it
+const dropIfEmptyBlock = (folders, from) => {
+  if (from && from.isItemBlock && (from.items || []).length === 0) {
+    logDelete('folder', from.id);
+    return folders.filter((f) => f.id !== from.id);
+  }
+  return folders;
+};
+
+// returns true only if the item really ended up in the target folder
 export const moveItem = (fromFolderId, itemId, toFolderId) => {
-  const folders = getFolders();
+  let folders = getFolders();
   const from = folders.find((f) => f.id === fromFolderId);
   const to = folders.find((f) => f.id === toFolderId);
-  if (!from || !to || from.id === to.id) return;
+  if (!from || !to || from.id === to.id || !canHold(to)) return false;
   const item = (from.items || []).find((i) => i.id === itemId);
-  if (!item) return;
+  if (!item) return false;
   from.items = (from.items || []).filter((i) => i.id !== itemId);
   to.items = [...(to.items || []), item];
   from.updated_date = Date.now();
   to.updated_date = Date.now();
+  folders = dropIfEmptyBlock(folders, from);
   saveFolders(folders);
+  return true;
+};
+
+// items may also stand alone on the main page, as their own block
+const blockFor = (item) => ({
+  id: uid(), name: item.text || 'item', type: (item.parentType || null) || 'list', size: 'portrait', isItemBlock: true,
+  items: [item], created_date: Date.now(), updated_date: Date.now(),
+});
+export const moveItemToRoot = (fromFolderId, itemId, parentType) => {
+  let folders = getFolders();
+  const from = folders.find((f) => f.id === fromFolderId);
+  if (!from || from.isItemBlock) return false; // already standing alone
+  const item = (from.items || []).find((i) => i.id === itemId);
+  if (!item) return false;
+  from.items = (from.items || []).filter((i) => i.id !== itemId);
+  from.updated_date = Date.now();
+  const b = blockFor({ ...item, parentType });
+  b.type = parentType || 'list';
+  saveFolders([...folders, b]);
+  return true;
+};
+export const copyItemToRoot = (fromFolderId, itemId, parentType) => {
+  const folders = getFolders();
+  const from = folders.find((f) => f.id === fromFolderId);
+  const item = from && (from.items || []).find((i) => i.id === itemId);
+  if (!item) return false;
+  const b = blockFor({ ...item, id: uid() });
+  b.type = parentType || 'list';
+  saveFolders([...folders, b]);
+  return true;
 };
 
 // copy an item into another folder (original stays)
@@ -148,12 +193,13 @@ export const copyItem = (fromFolderId, itemId, toFolderId) => {
   const folders = getFolders();
   const from = folders.find((f) => f.id === fromFolderId);
   const to = folders.find((f) => f.id === toFolderId);
-  if (!from || !to || from.id === to.id) return;
+  if (!from || !to || from.id === to.id || !canHold(to)) return false;
   const item = (from.items || []).find((i) => i.id === itemId);
-  if (!item) return;
+  if (!item) return false;
   to.items = [...(to.items || []), { ...item, id: uid() }];
   to.updated_date = Date.now();
   saveFolders(folders);
+  return true;
 };
 
 // ── nested folders: parent_id tree + move/copy folders ──
@@ -161,16 +207,27 @@ export const getRootFolders = () => getFolders().filter((f) => !f.parent_id);
 export const getChildFolders = (parentId) => getFolders().filter((f) => f.parent_id === parentId);
 
 // targetParentId = null moves the folder to the root (main page). cycle-safe.
+// returns true only if the folder really moved. Folders go into folders (or the
+// main page) — never into themselves, their own sub-folders, notes or albums.
 export const moveFolder = (folderId, targetParentId) => {
-  if (folderId === targetParentId) return;
-  let cur = targetParentId;
-  while (cur) {
-    const f = getFolders().find((x) => x.id === cur);
-    if (!f) break;
-    if (f.id === folderId) return; // would create a cycle
-    cur = f.parent_id;
+  if (folderId === targetParentId) return false;
+  const all = getFolders();
+  const me = all.find((x) => x.id === folderId);
+  if (!me) return false;
+  if (targetParentId) {
+    const target = all.find((x) => x.id === targetParentId);
+    if (!canHold(target)) return false;
+    let cur = targetParentId;
+    while (cur) {
+      const f = all.find((x) => x.id === cur);
+      if (!f) break;
+      if (f.id === folderId) return false; // would create a cycle
+      cur = f.parent_id;
+    }
   }
+  if ((me.parent_id || null) === (targetParentId || null)) return false;
   updateFolder(folderId, { parent_id: targetParentId || null });
+  return true;
 };
 
 // shallow copy: duplicates the folder + its items (not nested sub-folders)
@@ -423,6 +480,9 @@ export const LIST_TYPES = {
   book: { label: 'book list', icon: 'book', hasCheckbox: true, crossOut: true },
   movie: { label: 'movie list', icon: 'film', hasCheckbox: true, crossOut: true },
   album: { label: 'album', icon: 'images', isAlbum: true },
+  education: { label: 'education list', icon: 'graduation-cap', hasCheckbox: false },
+  cooking: { label: 'cooking list', icon: 'chef-hat', hasCheckbox: false },
+  project: { label: 'project list', icon: 'folder-kanban', hasCheckbox: false },
   folder: { label: 'folder', icon: 'folder', isFolder: true },
 };
 

@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import {
   Plus, CheckSquare, List, CircleDot, Film, Tv, Clapperboard, Book, Headphones, Star,
   Dumbbell, PiggyBank, Repeat, Palette, MapPin, X, Briefcase, GraduationCap, Compass,
-  Trophy, Languages, Wrench, Folder, StickyNote, Images, ListPlus,
+  Trophy, Languages, Wrench, Folder, StickyNote, Images, ListPlus, ChefHat, FolderKanban,
 } from 'lucide-react';
+import { ALL_ITEM_KINDS, subKindsOf } from '@/lib/itemKinds';
 
 // bottom-centre "add" button. in a plain folder it offers the same list of
 // list-types as the main page (so you can drop any sub-list inside); in a
@@ -21,82 +22,24 @@ const FOLDER_LIST = [
   { kind: 'book', label: 'books', icon: Book },
   { kind: 'movie', label: 'movies', icon: Film },
   { kind: 'album', label: 'album', icon: Images },
+  { kind: 'education', label: 'education', icon: GraduationCap },
+  { kind: 'cooking', label: 'cooking', icon: ChefHat },
+  { kind: 'project', label: 'project', icon: FolderKanban },
 ];
 
+// feature lists offer that parent's sub-types; the full flat list is exported for the
+// "all items" pickers
 const OPTIONS = {
-  todo: [
-    { kind: 'todo', label: 'todo', icon: CircleDot },
-    { kind: 'checklist', label: 'checklist', icon: CheckSquare },
-    { kind: 'list', label: 'list', icon: List },
-  ],
-  list: [
-    { kind: 'list', label: 'item', icon: List },
-    { kind: 'note', label: 'note', icon: StickyNote },
-  ],
-  movie: [
-    { kind: 'movie', label: 'movie', icon: Film },
-    { kind: 'series', label: 'series', icon: Tv },
-    { kind: 'drama', label: 'drama', icon: Clapperboard },
-  ],
-  book: [
-    { kind: 'book', label: 'book', icon: Book },
-    { kind: 'audiobook', label: 'audiobook', icon: Headphones },
-    { kind: 'magazine', label: 'magazine', icon: Book },
-    { kind: 'article', label: 'article', icon: Book },
-  ],
-  aspiration: [
-    { kind: 'aspiration', label: 'goal', icon: Star },
-    { kind: 'role', label: 'role', icon: Briefcase },
-    { kind: 'programme', label: 'programme', icon: GraduationCap },
-    { kind: 'course', label: 'course', icon: GraduationCap },
-  ],
-  habit: [
-    { kind: 'exercise', label: 'exercise', icon: Dumbbell },
-    { kind: 'saving', label: 'saving', icon: PiggyBank },
-    { kind: 'habit', label: 'habit', icon: Repeat },
-  ],
-  hobby: [
-    { kind: 'interest', label: 'interest', icon: Compass },
-    { kind: 'sport', label: 'sport', icon: Trophy },
-    { kind: 'arts', label: 'arts', icon: Palette },
-    { kind: 'language', label: 'language', icon: Languages },
-    { kind: 'skills', label: 'skills', icon: Wrench },
-    { kind: 'hobby', label: 'hobby', icon: Palette },
-  ],
+  todo: subKindsOf('todo').concat([{ kind: 'list', label: 'list', icon: List }]),
+  list: [{ kind: 'list', label: 'item', icon: List }, { kind: 'note', label: 'note', icon: StickyNote }],
+  movie: subKindsOf('movie'), book: subKindsOf('book'), aspiration: subKindsOf('aspiration'),
+  habit: subKindsOf('habit'), hobby: subKindsOf('hobby'),
+  education: subKindsOf('education'), cooking: subKindsOf('cooking'), project: subKindsOf('project'),
   place: [{ kind: 'place', label: 'place', icon: MapPin }],
   folder: FOLDER_LIST,
 };
 
-// every item kind across all feature lists — used by the top-right "+" in a
-// folder/list so you can drop any item type in, while the middle button keeps
-// lists & folders.
-export const ALL_ITEM_KINDS = [
-  { kind: 'todo', label: 'todo', icon: CircleDot },
-  { kind: 'checklist', label: 'checklist', icon: CheckSquare },
-  { kind: 'list', label: 'item', icon: List },
-  { kind: 'note', label: 'note', icon: StickyNote },
-  { kind: 'movie', label: 'movie', icon: Film },
-  { kind: 'series', label: 'series', icon: Tv },
-  { kind: 'drama', label: 'drama', icon: Clapperboard },
-  { kind: 'book', label: 'book', icon: Book },
-  { kind: 'audiobook', label: 'audiobook', icon: Headphones },
-  { kind: 'magazine', label: 'magazine', icon: Book },
-  { kind: 'article', label: 'article', icon: Book },
-  { kind: 'aspiration', label: 'goal', icon: Star },
-  { kind: 'role', label: 'role', icon: Briefcase },
-  { kind: 'programme', label: 'programme', icon: GraduationCap },
-  { kind: 'course', label: 'course', icon: GraduationCap },
-  { kind: 'exercise', label: 'exercise', icon: Dumbbell },
-  { kind: 'saving', label: 'saving', icon: PiggyBank },
-  { kind: 'habit', label: 'habit', icon: Repeat },
-  { kind: 'hobby', label: 'hobby', icon: Palette },
-  { kind: 'interest', label: 'interest', icon: Compass },
-  { kind: 'sport', label: 'sport', icon: Trophy },
-  { kind: 'arts', label: 'arts', icon: Palette },
-  { kind: 'language', label: 'language', icon: Languages },
-  { kind: 'skills', label: 'skills', icon: Wrench },
-  { kind: 'place', label: 'place', icon: MapPin },
-];
+export { ALL_ITEM_KINDS };
 
 export default function AddItemPicker({ folderType, onSelect }) {
   const [open, setOpen] = useState(false);
