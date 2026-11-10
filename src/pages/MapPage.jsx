@@ -303,9 +303,12 @@ export default function MapPage() {
         name: data.name, subheading: data.subheading, address: data.address, url: data.url,
         notes: data.notes, photo: data.photo, color: data.color,
         ...(manual ? { lat: manual.lat, lng: manual.lng } : {}),
+        // emptying the coordinates box removes a wrong pin (e.g. one placed by an old bad lookup)
+        ...(!manual && !(data.manualCoords || '').trim() && existing.lat != null ? { lat: null, lng: null } : {}),
       });
+      const clearedPin = !manual && !(data.manualCoords || '').trim() && existing.lat != null;
       if (manual) setFlyTarget({ lat: manual.lat, lng: manual.lng, ts: Date.now() });
-      else if (linkChanged) resolveInBackground(placeId, true);
+      else if (linkChanged || (clearedPin && (data.url || data.address))) resolveInBackground(placeId, true);
       setEditingPlace(null);
       refresh();
       return;
@@ -716,7 +719,7 @@ function PlaceEditor({ folderId, place, folders, onClose, onSave, onDelete }) {
               className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground"
             />
             <p className="text-[11px] text-muted-foreground mt-1 px-1 lowercase leading-snug">
-              only needed if the link above doesn't auto-plot: in google maps, tap and hold the spot — the coordinates shown at the bottom can be copied straight in here.
+              only needed if the link above doesn't auto-plot: in google maps, tap and hold the spot — the coordinates shown at the bottom can be copied straight in here. empty this box and save to remove a wrong pin.
             </p>
             {!isNew && place?.lat == null && !manualCoords && (
               <p className="text-[11px] text-destructive mt-1 px-1 lowercase">not plotted on the map yet</p>

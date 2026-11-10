@@ -200,7 +200,24 @@ export default function Home() {
   };
 
   const exitSelect = () => { setSelectMode(false); setSelectedIds([]); setMovePicker(false); setConfirmDelete(false); };
-  const toggleSelected = (id) => setSelectedIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  // the sticky header sits on top of the page, so a block selected while its top edge is tucked
+  // under it would have its selection border hidden. after selecting, nudge the page so the whole
+  // block (border included) sits just below the header.
+  const headerRef = React.useRef(null);
+  const revealBlock = (id) => {
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-block-id="${id}"]`);
+      const hd = headerRef.current;
+      if (!el || !hd) return;
+      const clearance = hd.getBoundingClientRect().bottom + 8; // 8px of air for the 3px ring
+      const top = el.getBoundingClientRect().top;
+      if (top < clearance) window.scrollBy({ top: top - clearance, behavior: 'smooth' });
+    });
+  };
+  const toggleSelected = (id) => {
+    setSelectedIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+    revealBlock(id);
+  };
   const toggleItemDone = (block) => { const it = (block.items || [])[0]; if (!it) return; updateItem(block.id, it.id, { done: !it.done }); refresh(); };
 
   const selectedFolders = () => folders.filter((f) => selectedIds.includes(f.id));
@@ -265,7 +282,7 @@ export default function Home() {
 
   return (
     <div className="px-4 sm:px-5 pb-8 pt-2 min-h-screen">
-      <div className="sticky top-0 z-20 -mx-4 sm:-mx-5 px-4 sm:px-5 pb-4 safe-top bg-background/95 backdrop-blur-sm">
+      <div ref={headerRef} className="sticky top-0 z-20 -mx-4 sm:-mx-5 px-4 sm:px-5 pb-4 mb-2 safe-top bg-background/95 backdrop-blur-sm">
       <header className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-3xl font-extrabold lowercase tracking-tight">retrolist</h1>
@@ -421,7 +438,7 @@ export default function Home() {
           ) : (
             <div className="space-y-2">
               {visibleFolders.map((f) => (
-                <button key={f.id} onClick={() => { if (selectMode) { toggleSelected(f.id); return; } if (f.isItemBlock) { setEditingItem({ folderId: f.id, item: (f.items || [])[0] }); return; } if (f.type === 'reminder') { setReminderFolder(f); setReminderOpen(true); } else navigate(`/folder/${f.id}`); }} className={`w-full flex items-center gap-3 p-3 rounded-2xl border bg-card active:scale-[0.98] transition-transform text-left ${selectMode && selectedIds.includes(f.id) ? 'border-foreground ring-2 ring-foreground' : 'border-border'}`}>
+                <button key={f.id} data-block-id={f.id} style={{ scrollMarginTop: 'calc(env(safe-area-inset-top, 0px) + 96px)' }} onClick={() => { if (selectMode) { toggleSelected(f.id); return; } if (f.isItemBlock) { setEditingItem({ folderId: f.id, item: (f.items || [])[0] }); return; } if (f.type === 'reminder') { setReminderFolder(f); setReminderOpen(true); } else navigate(`/folder/${f.id}`); }} className={`w-full flex items-center gap-3 p-3 rounded-2xl border bg-card active:scale-[0.98] transition-transform text-left ${selectMode && selectedIds.includes(f.id) ? 'border-foreground ring-2 ring-foreground' : 'border-border'}`}>
                   <span className="w-9 h-9 rounded-xl border-2 border-foreground/40 flex items-center justify-center shrink-0 relative">
                     <Folder className="w-5 h-5 text-foreground/70" strokeWidth={1.75} />
                     {f.pinned && <Pin className="w-3 h-3 absolute -top-1 -right-1 text-foreground fill-foreground" />}
@@ -482,6 +499,7 @@ export default function Home() {
         movingFolderIds={selectedFolders().filter((f) => !f.isItemBlock).map((f) => f.id)}
         currentContainerId={null}
         currentIsRoot
+        onCreated={refresh}
         onClose={() => setMovePicker(false)}
         onSelect={doMoveSelected}
       />
@@ -534,6 +552,7 @@ export default function Home() {
         movingFolderIds={picker ? [picker.folder.id] : []}
         currentContainerId={null}
         currentIsRoot
+        onCreated={refresh}
         onClose={() => setPicker(null)}
         onSelect={(targetId, targetName) => {
           if (!picker) return;

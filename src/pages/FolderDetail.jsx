@@ -291,6 +291,7 @@ export default function FolderDetail() {
         movingFolderIds={[id]}
         currentContainerId={folder.parent_id || null}
         currentIsRoot={!folder.parent_id}
+        onCreated={refresh}
         onClose={() => setPicker(null)}
         onSelect={handleFolderPicker}
       />

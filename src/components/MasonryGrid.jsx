@@ -424,6 +424,7 @@ export default function MasonryGrid({ folders, editMode, selectMode = false, sel
         return (
           <div
             key={f.id}
+            data-block-id={f.id}
             className={`absolute top-0 left-0 ${isDraggingThis || isSettlingThis ? 'shadow-2xl' : ''}`}
             style={{
               width: boxW,

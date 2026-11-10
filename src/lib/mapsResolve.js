@@ -162,17 +162,40 @@ function firstNonNull(promises) {
   });
 }
 
+// A free-text search with no checks will happily answer ANY string with SOMETHING — a vague or
+// placeholder query comes back as whatever obscure road happens to match (that is how pins ended
+// up on "Township Highway 202" in Ohio). So a result is only accepted when it actually
+// resembles what was asked for: at least half of the query's meaningful words must appear in the
+// result's own name/address. Anything else is "not found", and the app asks the person to tap the
+// exact spot instead of dropping a wrong pin.
+const norm = (str) => String(str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const words = (str) => (norm(str).match(/[\p{L}\p{N}]+/gu) || []).filter((w) => w.length >= 3 || /\d/.test(w));
+const GENERIC = new Set(['the', 'and', 'for', 'near', 'unnamed', 'place', 'new', 'untitled', 'unknown']);
+
+export function resultMatchesQuery(query, result) {
+  const q = words(query).filter((w) => !GENERIC.has(w));
+  if (!q.length) return false;
+  const hay = norm(`${result?.display_name || ''} ${result?.name || ''}`);
+  const hits = q.filter((w) => hay.includes(w)).length;
+  return hits >= Math.ceil(q.length / 2);
+}
+
 export async function geocode(query, { fetch: fetchFn = defaultFetch, ms = 2500 } = {}) {
   if (!query || !String(query).trim()) return null;
+  const q = String(query).trim();
   try {
     const res = await fetchWithTimeout(
       fetchFn,
-      `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(String(query).trim())}`,
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=${encodeURIComponent(q)}`,
       {},
       ms,
     );
     const data = await res.json();
-    if (data && data[0]) return pair(data[0].lat, data[0].lon);
+    if (Array.isArray(data)) {
+      // first result that genuinely matches the query (Nominatim's own ranking is kept)
+      const hit = data.find((r) => resultMatchesQuery(q, r));
+      if (hit) return pair(hit.lat, hit.lon);
+    }
   } catch { /* offline, blocked or timed out — treated as "not found" */ }
   return null;
 }
@@ -214,7 +237,7 @@ async function proxyResolve(link, fetchFn, ms) {
   return c ? { ...c, source: 'proxy', approx: false } : null;
 }
 
-export async function resolveCoords({ url, address, name } = {}, { budgetMs = 3000, fetch: fetchFn = defaultFetch } = {}) {
+export async function resolveCoords({ url, address } = {}, { budgetMs = 3000, fetch: fetchFn = defaultFetch } = {}) {
   lastHint = null;
   const link = (url || '').trim();
   const parsed = link ? parseMapsUrl(link) : null;
@@ -227,15 +250,12 @@ export async function resolveCoords({ url, address, name } = {}, { budgetMs = 30
   const server = link ? deadline(serverResolve(link, fetchFn, budgetMs), budgetMs) : Promise.resolve(null);
   const proxies = isGoogleLink ? deadline(proxyResolve(link, fetchFn, budgetMs), budgetMs) : Promise.resolve(null);
 
-  // The place's own NAME is only a usable search when no link was given. With a
-  // link, a name search is a blind guess (and the app's placeholder "unnamed
-  // place" is a real phrase that matches a road in Ohio) — an unresolved link
-  // goes to "tap the map to place it" instead of a wrong-country pin.
-  const PLACEHOLDER = /^(unnamed place|unnamed|place|new place)$/i;
-  const ownName = !link && name && !PLACEHOLDER.test(String(name).trim()) ? name : null;
+  // Only the ADDRESS field is ever searched. A place's name on its own ("home", "cafe", "unnamed
+  // place") is not an address — searching it worldwide is what dropped pins on random roads — so
+  // names are never geocoded. An unresolved link/address goes to "tap the map to place it".
   const queries = [];
   if (parsed && parsed.placeName) lastHint = parsed.placeName;
-  for (const q of [address, ownName]) {
+  for (const q of [address]) {
     const t = (q || '').trim();
     if (t && !queries.includes(t)) queries.push(t);
   }
