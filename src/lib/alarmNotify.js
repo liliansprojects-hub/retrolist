@@ -20,7 +20,7 @@ import { VIBRATIONS } from '@/lib/alarmAudio';
 const API = '/.netlify/functions/alarm-push';
 const DEVICE_KEY = 'retrolist_device_id';
 export const ICON = '/android/launchericon-192x192.png';
-export const BADGE = '/android/launchericon-96x96.png';
+export const BADGE = '/android/notification-badge-96.png';
 
 // ── device + platform ──
 export function getDeviceId() {

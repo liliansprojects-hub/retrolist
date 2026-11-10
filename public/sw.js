@@ -15,7 +15,7 @@
 // be replayed forever) and any third-party request (map tiles, geocoding).
 // No external scripts are loaded, so install can't fail on a CDN outage.
 
-const CACHE = 'retrolist-v4';
+const CACHE = 'retrolist-v5';
 const offlineFallbackPage = 'offline.html';
 const SHELL = '/index.html'; // every route of this single-page app serves the same shell
 
@@ -85,7 +85,7 @@ self.addEventListener('fetch', (event) => {
 // or the phone is locked, which nothing in the page itself can do.
 
 const ICON = '/android/launchericon-192x192.png';
-const BADGE = '/android/launchericon-96x96.png';
+const BADGE = '/android/notification-badge-96.png';
 
 function alarmNotificationOptions(data) {
   const a = data.alarm || {};
@@ -96,7 +96,8 @@ function alarmNotificationOptions(data) {
     tag: 'alarm-' + (a.id || 'x'),
     renotify: true,
     requireInteraction: true, // stays until dealt with, like an alarm should
-    silent: !!a.silent,
+    silent: !!a.silent, // false = the phone plays its notification sound + the vibrate pattern below
+    timestamp: data.firedAt || Date.now(),
     vibrate: a.vibrate && a.vibrate.length ? a.vibrate : undefined,
     data: { alarm: a, deviceId: data.deviceId, firedAt: data.firedAt || Date.now(), test: !!data.test },
     actions: [{ action: 'snooze', title: `snooze ${a.snooze || 5}m` }, { action: 'dismiss', title: 'dismiss' }],

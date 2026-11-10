@@ -39,8 +39,7 @@ const folderColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3
 // explicit tile source (the canonical OpenStreetMap host): the standard OSM
 // style, which draws parks and green space, water, roads and building
 // footprints around every location.
-// (dpr 2 asks for the sharp @2x tiles on high-density phone screens)
-const osmTiles = (x, y, z, dpr) => `https://tile.openstreetmap.org/${z}/${x}/${y}${dpr && dpr >= 2 ? '@2x' : ''}.png`;
+const osmTiles = (x, y, z) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
 
 const hasCoords = (p) =>
   p.lat != null && p.lng != null && p.lat !== '' && p.lng !== '' &&
@@ -387,7 +386,6 @@ export default function MapPage() {
             width={mapSize.w}
             height={mapSize.h}
             provider={osmTiles}
-            dprs={[1, 2]}
             minZoom={MIN_ZOOM}
             maxZoom={MAX_ZOOM}
             animate
