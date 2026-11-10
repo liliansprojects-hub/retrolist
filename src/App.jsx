@@ -18,7 +18,6 @@ import Layout from '@/components/Layout';
 import Home from '@/pages/Home';
 import FolderDetail from '@/pages/FolderDetail';
 import Journal from '@/pages/Journal';
-import Alarms from '@/pages/Alarms';
 import MapPage from '@/pages/MapPage';
 import Settings from '@/pages/Settings';
 import MyFilesPage from '@/pages/MyFilesPage';
@@ -42,7 +41,6 @@ const AuthenticatedApp = () => {
           <Route path="/" element={<Home />} />
           <Route path="/folder/:id" element={<FolderDetail />} />
           <Route path="/journal" element={<Journal />} />
-          <Route path="/alarms" element={<Alarms />} />
           <Route path="/map" element={<MapPage />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/my-files" element={<MyFilesPage />} />

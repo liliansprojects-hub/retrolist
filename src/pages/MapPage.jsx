@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import { Map as PigeonMap } from 'pigeon-maps';
-import { Plus, Minus, Globe, X, FolderPlus, ChevronDown, ChevronRight, ChevronLeft, Trash2, MapPin, Link2, Pencil, MoreVertical } from 'lucide-react';
+import { Plus, Minus, Globe, X, FolderPlus, ChevronDown, ChevronRight, ChevronLeft, Trash2, MapPin, Link2, Pencil, MoreVertical, Crosshair } from 'lucide-react';
 import {
   getMapFolders, saveMapFolders, addMapFolder, deleteMapFolder, updateMapFolder, addPlace, deletePlace, updatePlace,
 } from '@/lib/store';
@@ -81,6 +81,8 @@ export default function MapPage() {
   const [center, setCenter] = useState([20, 0]);
   const [zoom, setZoom] = useState(2);
   const [selectedPin, setSelectedPin] = useState(null);
+  // "tap the map to place this pin exactly" mode — the guaranteed-precise fallback when a link can't be resolved exactly
+  const [pickFor, setPickFor] = useState(null); // { folderId, placeId, name }
   const mapWrapRef = useRef(null);
   const [mapSize, setMapSize] = useState({ w: 0, h: 0 });
 
@@ -274,6 +276,7 @@ export default function MapPage() {
             setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
             // name/address searches are a best guess, not the exact pin — say so
             setResolveResult(coords.approx ? 'approx' : 'found');
+            if (coords.approx) setPickFor({ folderId: realFolderId, placeId: targetPlaceId, name: data.name });
           } else {
             // was previously silent either way — from the person's side that
             // looks identical to "nothing happened," indistinguishable from
@@ -283,6 +286,7 @@ export default function MapPage() {
             // directly (tap-and-hold a spot in Google Maps, copy the
             // "lat, lng" shown at the bottom).
             setResolveResult('failed');
+            setPickFor({ folderId: realFolderId, placeId: targetPlaceId, name: data.name });
           }
         })
         .catch((err) => { console.error('place geocoding failed', err); setResolveResult('failed'); })
@@ -340,8 +344,8 @@ export default function MapPage() {
             resolveResult === 'failed' ? 'bg-destructive text-destructive-foreground' : 'bg-black/80 text-white'
           )}>
             {resolveResult === 'found' ? 'location found'
-              : resolveResult === 'approx' ? 'approximate location found from the name — check the pin'
-              : "couldn't locate that — try pasting the lat, lng shown when you tap-and-hold a spot in google maps"}
+              : resolveResult === 'approx' ? 'approximate spot found from the name — tap the map to place it exactly'
+              : "couldn't locate that link — tap the map to place the pin yourself"}
           </span>
         </div>
       )}
@@ -391,7 +395,16 @@ export default function MapPage() {
             animate
             animateMaxScreens={10}
             onBoundsChanged={({ center: c, zoom: z }) => { setCenter(c); setZoom(z); }}
-            onClick={() => setSelectedPin(null)}
+            onClick={({ latLng }) => {
+              if (pickFor && latLng) {
+                updatePlace(pickFor.folderId, pickFor.placeId, { lat: latLng[0], lng: latLng[1] });
+                setSelectedPin(pickFor.placeId);
+                setPickFor(null);
+                refresh();
+                return;
+              }
+              setSelectedPin(null);
+            }}
           >
             {buildPins({
               places: mappedPlaces,
@@ -421,6 +434,13 @@ export default function MapPage() {
             </button>
           ))}
         </div>
+        {pickFor && (
+          <div className="absolute left-2 right-12 top-2 z-[6] flex items-center gap-2 px-3 py-2 rounded-2xl bg-black/85 text-white text-[11px] lowercase shadow-lg">
+            <Crosshair className="w-3.5 h-3.5 shrink-0" />
+            <span className="flex-1 leading-snug">tap the map exactly where "{pickFor.name || 'this place'}" is — zoom in first for precision</span>
+            <button type="button" onClick={() => setPickFor(null)} className="touch-44 px-2 text-white/70">cancel</button>
+          </div>
+        )}
         <span className="absolute bottom-1 right-1.5 text-[9px] text-black/40 bg-white/60 px-1 rounded pointer-events-none">© OpenStreetMap</span>
         {mapIsOffline && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/80 backdrop-blur-sm">
@@ -513,6 +533,13 @@ export default function MapPage() {
                         {p.subheading && <p className="text-xs text-muted-foreground lowercase truncate">{p.subheading}</p>}
                         {p.notes ? <p className="text-xs text-muted-foreground truncate">{p.notes}</p> : (p.address ? <p className="text-xs text-muted-foreground/70 truncate">{p.address}</p> : null)}
                       </div>
+                      <button
+                        onClick={() => { setPickFor({ folderId: folder.id, placeId: p.id, name: p.name }); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                        className="touch-44 p-1 text-muted-foreground"
+                        aria-label="set exact spot on map"
+                      >
+                        <Crosshair className="w-3.5 h-3.5" />
+                      </button>
                       <button
                         onClick={() => { setEditingPlace({ folderId: folder.id, place: p }); }}
                         className="touch-44 p-1 text-muted-foreground"

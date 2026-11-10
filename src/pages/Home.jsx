@@ -8,7 +8,7 @@ import {
 import {
   getFolders, getRootFolders, addFolder, updateFolder, reorderFolders, deleteFolder, moveFolder, copyFolder,
   addItem, updateItem, deleteItem,
-  getProfile, addEvent, addAlarm, getSettings, saveSettings, LIST_TYPES,
+  getProfile, addEvent, getSettings, saveSettings, LIST_TYPES,
 } from '@/lib/store';
 import FolderCard from '@/components/FolderCard';
 import MasonryGrid from '@/components/MasonryGrid';
@@ -16,7 +16,6 @@ import PlusWheel from '@/components/PlusWheel';
 import FolderEditModal from '@/components/FolderEditModal';
 import FolderPicker from '@/components/FolderPicker';
 import EventModal from '@/components/EventModal';
-import AlarmModal from '@/components/AlarmModal';
 import ReminderModal from '@/components/ReminderModal';
 import ShareDialog from '@/components/ShareDialog';
 import ItemEditor from '@/components/ItemEditor';
@@ -31,7 +30,6 @@ export default function Home() {
   const [eventOpen, setEventOpen] = useState(false);
   const [menuFolder, setMenuFolder] = useState(null);
   const [shareData, setShareData] = useState(null);
-  const [alarmOpen, setAlarmOpen] = useState(false);
   const [reminderOpen, setReminderOpen] = useState(false);
   const [reminderFolder, setReminderFolder] = useState(null);
   const [layout, setLayout] = useState(getSettings().homeLayout || 'blocks');
@@ -396,15 +394,6 @@ export default function Home() {
         onSave={(e) => {
           addEvent(e);
           navigate('/journal');
-        }}
-      />
-      <AlarmModal
-        open={alarmOpen}
-        onClose={() => setAlarmOpen(false)}
-        onSave={(data) => {
-          addAlarm(data);
-          setAlarmOpen(false);
-          navigate('/alarms');
         }}
       />
       <ReminderModal

@@ -56,6 +56,17 @@ export function extractCoords(text) {
 }
 
 
+
+// Google's own "no real answer" spots — the centre of the US, the Googleplex and
+// the like show up as placeholder map centres in pages served to scripts. A
+// result sitting on one of them (and not backed by the exact !3d!4d pin) is
+// treated as "not found" rather than plotted in the wrong country.
+const DEFAULT_SPOTS = [[37.0902, -95.7129], [39.8283, -98.5795], [37.4220, -122.0841], [37.4219, -122.0840], [37.3861, -122.0839], [37.7749, -122.4194], [0, 0]];
+function isDefaultSpot(c) {
+  return !!c && DEFAULT_SPOTS.some(([la, ln]) => Math.abs(c.lat - la) < 0.06 && Math.abs(c.lng - ln) < 0.06);
+}
+export { isDefaultSpot };
+
 // Like extractCoords but also says HOW trustworthy the match is, so a redirect
 // chain can keep following until it finds the pin itself instead of settling on
 // the first camera position it sees:  3 = the pin (!3d!4d), 2 = the link's
@@ -66,9 +77,9 @@ export function extractCoordsRanked(text) {
   let m = s.match(new RegExp(`!3d(${NUM})!4d(${NUM})`));
   if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 3 }; }
   m = s.match(new RegExp(`[?&;](?:center|ll|q|query|destination|daddr)=(${NUM})(?:%2C|%2c|,)\\s*(${NUM})`));
-  if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 2 }; }
+  if (m) { const c = pair(m[1], m[2]); if (c && !isDefaultSpot(c)) return { ...c, rank: 2 }; }
   m = s.match(new RegExp(`@(${NUM}),(${NUM})`));
-  if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 1 }; }
+  if (m) { const c = pair(m[1], m[2]); if (c && !isDefaultSpot(c)) return { ...c, rank: 1 }; }
   return null;
 }
 
@@ -175,7 +186,7 @@ async function serverResolve(link, fetchFn, ms) {
     const json = await res.json(); // throws on the SPA's index.html fallback => caught => null
     if (json && json.found) {
       const c = pair(json.lat, json.lng);
-      if (c) return { ...c, source: 'server', approx: !!json.approx };
+      if (c && !isDefaultSpot(c)) return { ...c, source: 'server', approx: !!json.approx };
     }
   } catch { /* function not deployed / errored */ }
   return null;
@@ -190,7 +201,9 @@ async function proxyResolve(link, fetchFn, ms) {
     const json = await res.json();
     const fromUrl = extractCoordsRanked(json?.status?.url);
     if (fromUrl && fromUrl.rank >= 2) return { lat: fromUrl.lat, lng: fromUrl.lng };
-    return ogImageCenter(json?.contents) || (fromUrl ? { lat: fromUrl.lat, lng: fromUrl.lng } : null);
+    const finalUrl = json?.status?.url || '';
+    const og = /\/maps\/place\//.test(finalUrl) ? ogImageCenter(json?.contents) : null;
+    return og && !isDefaultSpot(og) ? og : (fromUrl ? { lat: fromUrl.lat, lng: fromUrl.lng } : null);
   })();
   const c = await firstNonNull([viaAllOrigins]);
   return c ? { ...c, source: 'proxy', approx: false } : null;
@@ -209,7 +222,7 @@ export async function resolveCoords({ url, address, name } = {}, { budgetMs = 30
   const proxies = isGoogleLink ? deadline(proxyResolve(link, fetchFn, budgetMs), budgetMs) : Promise.resolve(null);
 
   const queries = [];
-  for (const q of [parsed && parsed.placeName, address, name]) {
+  for (const q of [address, parsed && parsed.placeName, name]) {
     const t = (q || '').trim();
     if (t && !queries.includes(t)) queries.push(t);
   }

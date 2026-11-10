@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, useLocation, Link } from 'react-router-dom';
-import { Home as HomeIcon, BookHeart, Map as MapIcon, Settings as SettingsIcon, RefreshCw, CloudOff, Check, AlarmClock } from 'lucide-react';
+import { Home as HomeIcon, BookHeart, Map as MapIcon, Settings as SettingsIcon, RefreshCw, CloudOff, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSync } from '@/lib/SyncContext';
 import AlarmWatcher from '@/components/AlarmWatcher';
@@ -10,7 +10,6 @@ import AlarmPermissionDialog from '@/components/AlarmPermissionDialog';
 const navItems = [
   { to: '/', icon: HomeIcon, label: 'home' },
   { to: '/journal', icon: BookHeart, label: 'journal' },
-  { to: '/alarms', icon: AlarmClock, label: 'alarms' },
   { to: '/map', icon: MapIcon, label: 'map' },
   { to: '/settings', icon: SettingsIcon, label: 'settings' },
 ];

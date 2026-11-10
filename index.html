@@ -7,10 +7,18 @@
     <meta name="theme-color" content="#ffffff" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/ios/180.png" />
     <title>Base44 APP</title>
+      <style>
+      html, body { margin: 0; background: #ffffff; }
+      #splash { position: fixed; inset: 0; z-index: 99999; background: #ffffff; display: flex; align-items: center; justify-content: center; transition: opacity .35s ease; }
+      #splash.hide { opacity: 0; pointer-events: none; }
+      #splash img { width: 160px; height: 160px; object-fit: contain; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <div id="splash" aria-hidden="true"><img src="/android/launchericon-512x512.png" alt="" width="160" height="160" /></div>
     <script type="module" src="/src/main.jsx"></script>
     <script>
       if ('serviceWorker' in navigator) {

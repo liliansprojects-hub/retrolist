@@ -67,7 +67,7 @@ async function resolve(startUrl, deadline) {
     if (best && best.rank === 3) break; // the pin itself — can't do better
 
     let res;
-    try { res = await timedFetch(current, deadline, { redirect: 'manual', headers: { Accept: 'text/html' } }); }
+    try { res = await timedFetch(current, deadline, { redirect: 'manual', headers: { Accept: 'text/html', 'Accept-Language': 'en', Cookie: 'CONSENT=YES+cb; SOCS=CAI' } }); }
     catch { break; }
 
     const location = res.headers.get('location');
@@ -85,8 +85,8 @@ async function resolve(startUrl, deadline) {
     // a real page: only the og:image static-map centre is trusted (see ogImageCenter)
     let text = '';
     try { text = await res.text(); } catch { /* ignore */ }
-    const og = ogImageCenter(text);
-    if (og) note({ ...og, rank: best && best.rank >= 2 ? best.rank - 0.5 : 2 }, current);
+    const og = /\/maps\/place\//.test(current) && !/consent\.google/.test(current) ? ogImageCenter(text) : null;
+    if (og && !isDefaultSpot(og)) note({ ...og, rank: best && best.rank >= 2 ? best.rank - 0.5 : 2 }, current);
     break;
   }
 
@@ -132,6 +132,16 @@ function pair(a, b) {
 }
 
 
+
+// Google's own "no real answer" spots — the centre of the US, the Googleplex and
+// the like show up as placeholder map centres in pages served to scripts. A
+// result sitting on one of them (and not backed by the exact !3d!4d pin) is
+// treated as "not found" rather than plotted in the wrong country.
+const DEFAULT_SPOTS = [[37.0902, -95.7129], [39.8283, -98.5795], [37.4220, -122.0841], [37.4219, -122.0840], [37.3861, -122.0839], [37.7749, -122.4194], [0, 0]];
+function isDefaultSpot(c) {
+  return !!c && DEFAULT_SPOTS.some(([la, ln]) => Math.abs(c.lat - la) < 0.06 && Math.abs(c.lng - ln) < 0.06);
+}
+
 // Like extractCoords but also says HOW trustworthy the match is, so a redirect
 // chain can keep following until it finds the pin itself instead of settling on
 // the first camera position it sees:  3 = the pin (!3d!4d), 2 = the link's
@@ -142,9 +152,9 @@ function extractCoordsRanked(text) {
   let m = s.match(new RegExp(`!3d(${NUM})!4d(${NUM})`));
   if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 3 }; }
   m = s.match(new RegExp(`[?&;](?:center|ll|q|query|destination|daddr)=(${NUM})(?:%2C|%2c|,)\\s*(${NUM})`));
-  if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 2 }; }
+  if (m) { const c = pair(m[1], m[2]); if (c && !isDefaultSpot(c)) return { ...c, rank: 2 }; }
   m = s.match(new RegExp(`@(${NUM}),(${NUM})`));
-  if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 1 }; }
+  if (m) { const c = pair(m[1], m[2]); if (c && !isDefaultSpot(c)) return { ...c, rank: 1 }; }
   return null;
 }
 
