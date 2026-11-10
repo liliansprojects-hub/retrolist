@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Map as PigeonMap, Overlay } from 'pigeon-maps';
-import { Plus, X, FolderPlus, ChevronDown, ChevronRight, ChevronLeft, Trash2, MapPin, Link2, Pencil, MoreVertical } from 'lucide-react';
+import { useSearchParams, useLocation } from 'react-router-dom';
+import { Map as PigeonMap } from 'pigeon-maps';
+import { Plus, Minus, Globe, X, FolderPlus, ChevronDown, ChevronRight, ChevronLeft, Trash2, MapPin, Link2, Pencil, MoreVertical } from 'lucide-react';
 import {
   getMapFolders, saveMapFolders, addMapFolder, deleteMapFolder, updateMapFolder, addPlace, deletePlace, updatePlace,
 } from '@/lib/store';
@@ -10,6 +10,8 @@ import ColorPicker from '@/components/ColorPicker';
 import { useSync } from '@/lib/SyncContext';
 import { cn } from '@/lib/utils';
 import { resolveCoords, parseManualCoords } from '@/lib/mapsResolve';
+import { fitPoints, clampZoom, TILE, MIN_ZOOM, MAX_ZOOM } from '@/lib/mapView';
+import { buildPins } from '@/components/MapPins';
 import { WifiOff } from 'lucide-react';
 
 // NOTE ON THE MAP LIBRARY: this used to be react-leaflet. Leaflet's own
@@ -30,125 +32,19 @@ const sweepTried = new Set();
 
 const folderColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 
-// standard web-mercator projection, used only to compute a center+zoom that
-// fits a set of points — pigeon-maps doesn't ship a fitBounds helper, so
-// this is a small, dependency-free version of the same math every map
-// library uses internally for it.
-function project([lat, lng]) {
-  const sinLat = Math.sin((lat * Math.PI) / 180);
-  const x = lng / 360 + 0.5;
-  const y = 0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI);
-  return [x, y];
-}
-function unproject([x, y]) {
-  const lng = (x - 0.5) * 360;
-  const n = Math.PI - 2 * Math.PI * y;
-  const lat = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
-  return [lat, lng];
-}
-function fitPoints(points, width, height, { maxZoom = 16, padding = 50 } = {}) {
-  if (!points.length || !width || !height) return null;
-  if (points.length === 1) return { center: points[0], zoom: Math.min(15, maxZoom) };
-  const proj = points.map(project);
-  const minX = Math.min(...proj.map((p) => p[0]));
-  const maxX = Math.max(...proj.map((p) => p[0]));
-  const minY = Math.min(...proj.map((p) => p[1]));
-  const maxY = Math.max(...proj.map((p) => p[1]));
-  const TILE = 256;
-  const availW = Math.max(1, width - padding * 2);
-  const availH = Math.max(1, height - padding * 2);
-  const spanX = Math.max(maxX - minX, 1e-9);
-  const spanY = Math.max(maxY - minY, 1e-9);
-  const zoom = Math.max(1, Math.min(Math.log2(availW / (TILE * spanX)), Math.log2(availH / (TILE * spanY)), maxZoom));
-  const center = unproject([(minX + maxX) / 2, (minY + maxY) / 2]);
-  return { center, zoom };
-}
+// projection / fit-to-pins maths lives in @/lib/mapView, and the pins
+// themselves (one waterdrop pin per place, no clustering) in
+// @/components/MapPins.
 
-function coloredPin(color) {
-  return (
-    <div style={{ width: 18, height: 18, borderRadius: '50% 50% 50% 0', transform: 'rotate(-45deg) translate(-50%, -100%)', background: color || '#0a0a0a', border: '2.5px solid #fff', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }} />
-  );
-}
-function clusterBadge(count) {
-  return (
-    <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#0a0a0a', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, border: '2.5px solid #fff', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', transform: 'translate(-50%, -50%)' }}>
-      {count}
-    </div>
-  );
-}
+// explicit tile source (the canonical OpenStreetMap host): the standard OSM
+// style, which draws parks and green space, water, roads and building
+// footprints around every location.
+// (dpr 2 asks for the sharp @2x tiles on high-density phone screens)
+const osmTiles = (x, y, z, dpr) => `https://tile.openstreetmap.org/${z}/${x}/${y}${dpr && dpr >= 2 ? '@2x' : ''}.png`;
 
-// smart pin-density clustering: at low zoom nearby pins collapse into a count
-// badge (tap to zoom in); at high zoom every pin shows individually, coloured
-// to match its folder. tap any pin to open its popup.
-// NOT rendered as a JSX component (<MarkerLayer .../>) — pigeon-maps only
-// recognizes and positions Overlay/Marker elements that are DIRECT
-// children of <Map>, walking its own props.children one level deep to
-// inject them with projection info. Wrapping them in a separate component
-// puts them one level too deep for that to find — pigeon-maps silently
-// renders nothing for them, no error, which is exactly what "the map
-// zooms in but no pin ever shows up" looks like. Calling this as a plain
-// function (buildMarkers(...) inside <Map>{...}</Map>, not <MarkerLayer/>)
-// and letting its returned array sit directly in Map's children fixes it.
-function buildMarkers({ places, zoom, onPinClick, onClusterClick, selected }) {
-  const prec = zoom <= 12 ? Math.max(1, 9 - Math.floor(zoom)) : 99;
-  const buckets = {};
-  places.forEach((p) => {
-    const key = p.lat.toFixed(prec) + '|' + p.lng.toFixed(prec);
-    (buckets[key] = buckets[key] || []).push(p);
-  });
-  return Object.values(buckets).map((bucket) => {
-    if (bucket.length === 1) {
-      const p = bucket[0];
-      return (
-        <Overlay key={p.id} anchor={[p.lat, p.lng]} offset={[0, 0]}>
-          <div
-            onClick={(e) => { e.stopPropagation(); onPinClick(p); }}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer' }}
-          >
-            {coloredPin(p.folderColor)}
-            {/* the in-app place name, always visible on the map itself —
-                not a Google label, ours, in our own colour/contrast. */}
-            <span
-              style={{
-                marginTop: 2, fontSize: 11, fontWeight: 700, color: '#0a0a0a', background: 'rgba(255,255,255,0.92)',
-                padding: '1px 6px', borderRadius: 6, whiteSpace: 'nowrap', maxWidth: 140, overflow: 'hidden',
-                textOverflow: 'ellipsis', boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
-              }}
-            >
-              {p.name}
-            </span>
-          </div>
-          {selected === p.id && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="text-sm max-w-[200px] bg-white text-black rounded-xl shadow-xl p-2"
-              style={{ position: 'absolute', bottom: 44, left: '50%', transform: 'translateX(-50%)' }}
-            >
-              {p.photo && <img src={p.photo} alt="" className="w-full h-24 object-cover rounded-lg mb-1" />}
-              <p className="font-bold">{p.name}</p>
-              {p.address && <p className="text-xs text-gray-500">{p.address}</p>}
-              {p.notes && <p className="text-xs mt-1">{p.notes}</p>}
-              {p.url && (
-                <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 underline flex items-center gap-1 mt-1">
-                  <Link2 className="w-3 h-3" /> open in maps
-                </a>
-              )}
-            </div>
-          )}
-        </Overlay>
-      );
-    }
-    const lat = bucket.reduce((s, p) => s + p.lat, 0) / bucket.length;
-    const lng = bucket.reduce((s, p) => s + p.lng, 0) / bucket.length;
-    return (
-      <Overlay key={'c:' + lat + '|' + lng} anchor={[lat, lng]} offset={[0, 0]}>
-        <div onClick={(e) => { e.stopPropagation(); onClusterClick(lat, lng); }} style={{ cursor: 'pointer' }}>
-          {clusterBadge(bucket.length)}
-        </div>
-      </Overlay>
-    );
-  });
-}
+const hasCoords = (p) =>
+  p.lat != null && p.lng != null && p.lat !== '' && p.lng !== '' &&
+  Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng));
 
 export default function MapPage() {
   const { syncState } = useSync();
@@ -181,6 +77,7 @@ export default function MapPage() {
   const [editingFolder, setEditingFolder] = useState(null);
   const [flyTarget, setFlyTarget] = useState(null);
   const [filterSignal, setFilterSignal] = useState(0);
+  const fitMode = useRef('fit'); // 'world' | 'fit' — how the next explicit re-frame behaves
   const [folderMenu, setFolderMenu] = useState(null);
   const [center, setCenter] = useState([20, 0]);
   const [zoom, setZoom] = useState(2);
@@ -229,7 +126,7 @@ export default function MapPage() {
   const visiblePlaces = activeFolders === null
     ? allPlaces
     : allPlaces.filter((p) => activeFolders.includes(p.folderId));
-  const mappedPlaces = visiblePlaces.filter((p) => p.lat && p.lng);
+  const mappedPlaces = visiblePlaces.filter(hasCoords).map((p) => ({ ...p, lat: Number(p.lat), lng: Number(p.lng) }));
 
   // track the map's actual pixel size so fitPoints() can compute a zoom
   // level that really fits the container, not a guess.
@@ -243,16 +140,50 @@ export default function MapPage() {
     return () => ro.disconnect();
   }, []);
 
-  // fit all currently-visible pins whenever the folder filter changes, and
-  // once on first load — this is what makes "show as many pins as possible"
-  // work on re-entering the page or after (re)filtering.
+  // The map fits every visible pin into one frame ONLY when asked to: on
+  // first load, and when the "all" chip, a folder filter, the globe button or
+  // the Map nav button is pressed (each bumps filterSignal). It used to also
+  // re-fit whenever the map resized or the pin count changed — which kept
+  // yanking the view away from a place you had just zoomed into, and made
+  // panning/zooming feel locked.
+  //   'initial'  waits (without moving anything) until there are pins to show
+  //   'explicit' always acts: fit the pins, or show the whole world if none
+  const pendingFit = useRef('initial');
+  const lastSignal = useRef(0);
   useEffect(() => {
+    if (filterSignal !== lastSignal.current) { lastSignal.current = filterSignal; pendingFit.current = 'explicit'; }
+    if (!pendingFit.current) return;
     if (!mapSize.w || !mapSize.h) return;
-    if (!mappedPlaces.length) return;
-    const fit = fitPoints(mappedPlaces.map((p) => [p.lat, p.lng]), mapSize.w, mapSize.h);
+    const pts = mappedPlaces.map((p) => [p.lat, p.lng]);
+    // 'all' / globe / map button: pull all the way out so the whole world is in
+    // frame — every pin, wherever it is on Earth, is then on screen at once
+    if (pendingFit.current === 'explicit' && (fitMode.current === 'world' || !pts.length)) {
+      setCenter([20, 0]);
+      setZoom(clampZoom(Math.min(Math.log2(mapSize.w / TILE), Math.log2(mapSize.h / TILE))));
+      pendingFit.current = false;
+      return;
+    }
+    if (!pts.length) return;
+    const fit = fitPoints(pts, mapSize.w, mapSize.h);
     if (fit) { setCenter(fit.center); setZoom(fit.zoom); }
+    pendingFit.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterSignal, mapSize.w, mapSize.h, mappedPlaces.length]);
+
+  // pressing the Map button in the bottom nav while already on this page
+  // resets to the all-pins world view (a nav click to the same URL still
+  // produces a new location key)
+  const location = useLocation();
+  const firstLocationKey = useRef(location.key);
+  useEffect(() => {
+    if (location.key === firstLocationKey.current) return;
+    firstLocationKey.current = location.key;
+    setActiveFolders(null);
+    setSelectedPin(null);
+    fitMode.current = 'world';
+    setFilterSignal((n) => n + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
 
   // zoom straight onto a specific place whenever it's targeted (a place just
   // located, or one tapped in the list / on the map): centred on the exact
@@ -261,8 +192,9 @@ export default function MapPage() {
   // lives in the fit effect above; this is only for "take me to THIS place".)
   useEffect(() => {
     if (flyTarget && flyTarget.lat != null) {
+      pendingFit.current = false;
       setCenter([flyTarget.lat, flyTarget.lng]);
-      setZoom(17);
+      setZoom((z) => (flyTarget.keepZoom ? Math.max(Math.round(z), 14) : 17));
       // select whichever place this fly-to is for (or none, for a plain
       // re-center) — clearing it here used to close a popup the same tap had
       // just opened.
@@ -280,10 +212,18 @@ export default function MapPage() {
       }
       return [...prev, id];
     });
+    fitMode.current = 'fit';
     setFilterSignal((s) => s + 1);
   };
 
-  const showAll = () => { setActiveFolders(null); setFilterSignal((s) => s + 1); };
+  const showAll = () => { setActiveFolders(null); setSelectedPin(null); fitMode.current = 'world'; setFilterSignal((n) => n + 1); };
+
+  // zoom in / out one step; if a pin is selected, keep it centred while zooming
+  const zoomBy = (d) => {
+    const sel = selectedPin ? mappedPlaces.find((p) => p.id === selectedPin) : null;
+    if (sel) setCenter([sel.lat, sel.lng]);
+    setZoom((z) => clampZoom(Math.round(z) + d));
+  };
 
   const handleAddFolder = () => {
     if (!newFolderName.trim()) return;
@@ -439,27 +379,50 @@ export default function MapPage() {
       {/* map — collapses when a place is being edited. always rendered
           (not gated on having any resolved places) so the base map itself
           is always visible. */}
-      <div ref={mapWrapRef} className={`relative rounded-2xl overflow-hidden mb-4 transition-all duration-300 ${editingPlace ? 'h-36' : 'h-64'}`}>
+      <div ref={mapWrapRef} data-allow-pinch="true" style={{ touchAction: 'none' }} className={`relative rounded-2xl overflow-hidden mb-4 transition-all duration-300 ${editingPlace ? 'h-36' : 'h-64'}`}>
         {mapSize.w > 0 && (
           <PigeonMap
             center={center}
             zoom={zoom}
             width={mapSize.w}
             height={mapSize.h}
+            provider={osmTiles}
+            dprs={[1, 2]}
+            minZoom={MIN_ZOOM}
+            maxZoom={MAX_ZOOM}
             animate
             animateMaxScreens={10}
             onBoundsChanged={({ center: c, zoom: z }) => { setCenter(c); setZoom(z); }}
             onClick={() => setSelectedPin(null)}
           >
-            {buildMarkers({
+            {buildPins({
               places: mappedPlaces,
               zoom,
               selected: selectedPin,
-              onPinClick: (p) => setFlyTarget({ lat: p.lat, lng: p.lng, placeId: p.id, ts: Date.now() }),
-              onClusterClick: (lat, lng) => { setCenter([lat, lng]); setZoom((z) => Math.min(18, z + 2)); },
+              onPinClick: (p) => setFlyTarget({ lat: p.lat, lng: p.lng, placeId: p.id, keepZoom: true, ts: Date.now() }),
             })}
           </PigeonMap>
         )}
+        {/* on-screen controls: drag to pan and pinch / scroll still work, but
+            these give a reliable way to zoom from any pin, plus a one-tap
+            "show everything" */}
+        <div className="absolute right-2 top-2 z-[5] flex flex-col gap-1.5">
+          {[
+            { label: 'zoom in', Icon: Plus, onClick: () => zoomBy(1) },
+            { label: 'zoom out', Icon: Minus, onClick: () => zoomBy(-1) },
+            { label: 'show all pins', Icon: Globe, onClick: showAll },
+          ].map(({ label, Icon, onClick }) => (
+            <button
+              key={label}
+              type="button"
+              aria-label={label}
+              onClick={onClick}
+              className="w-9 h-9 rounded-full bg-white/95 text-black shadow-md border border-black/10 flex items-center justify-center active:scale-90 transition-transform"
+            >
+              <Icon className="w-4 h-4" />
+            </button>
+          ))}
+        </div>
         <span className="absolute bottom-1 right-1.5 text-[9px] text-black/40 bg-white/60 px-1 rounded pointer-events-none">© OpenStreetMap</span>
         {mapIsOffline && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/80 backdrop-blur-sm">

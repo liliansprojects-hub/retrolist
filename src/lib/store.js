@@ -242,7 +242,13 @@ export const deletePeriodEntry = (id) => {
 
 // ── alarms ──
 export const getAlarms = () => read('alarms', []);
-export const saveAlarms = (a) => write('alarms', a);
+export const saveAlarms = (a) => {
+  write('alarms', a);
+  // tell the alarm watcher (reschedule immediately — it used to only notice
+  // changes on its next once-a-minute poll, so an alarm created for "in 1
+  // minute" could be missed) and the server sync (mirror to the push server)
+  try { window.dispatchEvent(new Event('retrolist:alarms')); } catch { /* non-browser */ }
+};
 export const addAlarm = (alarm) => {
   const a = getAlarms();
   const al = { id: uid(), enabled: true, created_date: Date.now(), ...alarm };

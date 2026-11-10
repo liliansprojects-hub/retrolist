@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { primeAudio } from '@/lib/alarmAudio';
 import { installZoomLock } from '@/lib/zoomLock';
+import { startAlarmSync } from '@/lib/alarmNotify';
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
@@ -72,6 +73,9 @@ function App() {
     // page zoom is locked on every input path (see lib/zoomLock.js),
     // except inside the photo crop frame.
     const removeZoomLock = installZoomLock();
+    // keep the push server's copy of the alarms current (so they can ring
+    // when the app is closed); a no-op until notifications are allowed
+    const stopAlarmSync = startAlarmSync();
 
     // notification permission is now requested contextually from
     // AlarmModal (with an explanation of why, shown first) instead of
@@ -80,6 +84,7 @@ function App() {
     return () => {
       window.removeEventListener('pointerdown', prime);
       removeZoomLock();
+      stopAlarmSync();
     };
   }, []);
 

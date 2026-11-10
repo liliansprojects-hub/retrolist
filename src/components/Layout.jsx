@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { useSync } from '@/lib/SyncContext';
 import AlarmWatcher from '@/components/AlarmWatcher';
 import ReminderWatcher from '@/components/ReminderWatcher';
+import AlarmPermissionDialog from '@/components/AlarmPermissionDialog';
 
 const navItems = [
   { to: '/', icon: HomeIcon, label: 'home' },
@@ -75,6 +76,7 @@ export default function Layout() {
       </nav>
       <AlarmWatcher />
       <ReminderWatcher />
+      <AlarmPermissionDialog />
     </div>
   );
 }

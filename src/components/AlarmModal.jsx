@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Play, Trash2, Upload, Music } from 'lucide-react';
 import { SOUNDS, VIBRATIONS, preview, stopAll } from '@/lib/alarmAudio';
+import AlarmNotifCard from '@/components/AlarmNotifCard';
 import { getSettings, getCustomTracks, addCustomTrack, deleteCustomTrack } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import ColorPicker from './ColorPicker';
@@ -96,12 +97,6 @@ export default function AlarmModal({ open, onClose, onSave, onDelete, alarm }) {
 
   const handleSave = () => {
     if (!time) return;
-    // the browser's own permission dialog text can't be customized — so the
-    // explanation of *why* lives in our UI (the banner above the buttons),
-    // shown right before triggering the actual request here.
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
     onSave({
       name: (name || '').trim() || 'alarm',
       time,
@@ -114,6 +109,9 @@ export default function AlarmModal({ open, onClose, onSave, onDelete, alarm }) {
       color,
       style,
     });
+    // once the alarm is saved, offer the (alarm-specific) notification
+    // permission prompt — see AlarmPermissionDialog
+    setTimeout(() => window.dispatchEvent(new Event('retrolist:ask-alarm-permission')), 300);
   };
 
   const test = () => {
@@ -150,11 +148,7 @@ export default function AlarmModal({ open, onClose, onSave, onDelete, alarm }) {
           </button>
         </div>
 
-        {'Notification' in window && Notification.permission !== 'granted' && (
-          <div className="mb-4 px-3 py-2.5 rounded-xl bg-muted/50 text-xs text-muted-foreground lowercase">
-            retrolist needs notification permission so this alarm can alert you — you'll be asked to allow it when you save.
-          </div>
-        )}
+        <div className="mb-4"><AlarmNotifCard variant="prompt" /></div>
 
         <div className="space-y-4">
           <TimePicker value={time} onChange={setTime} format={format} />

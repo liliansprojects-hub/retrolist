@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Share2, Moon, Sun, Monitor, Type, AlertCircle, LogOut, ChevronRight, Play, Bell, Check, FolderOpen, FileText, Trash2,
+  Share2, Moon, Sun, Monitor, Type, AlertCircle, LogOut, ChevronRight, Play, Check, FolderOpen, FileText, Trash2,
 } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 import { useLocalAuth } from '@/lib/LocalAuthContext';
@@ -9,6 +9,7 @@ import { getProfile, saveProfile, deleteAccount, createShare, getSettings, saveS
 import { deleteAccountRemote } from '@/lib/cloudSync';
 import { getAccount, clearAccount, pbkdf2 } from '@/lib/localAuth';
 import ColorPicker from '@/components/ColorPicker';
+import AlarmNotifCard from '@/components/AlarmNotifCard';
 import ImageUpload from '@/components/ImageUpload';
 import ShareDialog from '@/components/ShareDialog';
 import EmailSection from '@/components/EmailSection';
@@ -28,7 +29,6 @@ export default function Settings() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState(getProfile());
   const [settings, setSettings] = useState(getSettings());
-  const [notifStatus, setNotifStatus] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported');
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [periodColorOpen, setPeriodColorOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -52,11 +52,6 @@ export default function Settings() {
   const updateSettings = (s) => {
     saveSettings(s);
     setSettings(getSettings());
-  };
-
-  const enableNotif = async () => {
-    if (!('Notification' in window)) return;
-    try { setNotifStatus(await Notification.requestPermission()); } catch {}
   };
 
   const handleShareApp = () => {
@@ -287,17 +282,7 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium lowercase">notifications</p>
-              <p className="text-xs text-muted-foreground lowercase mt-0.5">{notifStatus === 'granted' ? 'allowed' : notifStatus === 'denied' ? 'blocked' : notifStatus === 'unsupported' ? 'unsupported' : 'ask once'}</p>
-            </div>
-            {notifStatus !== 'granted' && notifStatus !== 'unsupported' && (
-              <button onClick={enableNotif} className="touch-44 flex items-center gap-1.5 px-3 h-9 rounded-full bg-muted text-xs font-medium lowercase">
-                <Bell className="w-3.5 h-3.5" /> enable
-              </button>
-            )}
-          </div>
+          <AlarmNotifCard variant="full" />
         </div>
       </section>
 

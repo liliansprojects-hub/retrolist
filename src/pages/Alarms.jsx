@@ -3,6 +3,7 @@ import { Plus, Pencil, Trash2, Power } from 'lucide-react';
 import { getAlarms, addAlarm, updateAlarm, deleteAlarm, getSettings } from '@/lib/store';
 import { nextTrigger, formatRemaining, dayLabel, formatTime } from '@/lib/alarms';
 import AlarmModal from '@/components/AlarmModal';
+import AlarmNotifCard from '@/components/AlarmNotifCard';
 import { cn } from '@/lib/utils';
 
 export default function Alarms() {
@@ -69,6 +70,8 @@ export default function Alarms() {
           </button>
         </div>
       </header>
+
+      <div className="mb-4"><AlarmNotifCard variant="full" /></div>
 
       {alarms.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
