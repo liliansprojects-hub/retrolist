@@ -7,8 +7,8 @@ const f = (key, label, extra = {}) => ({ key, label, ...extra });
 export const COUNTRIES = {
   GB: {
     chip: 'uk', name: 'united kingdom', cc: 'gb', upper: true, postcodeHint: 'e.g. b1 1aa',
-    fields: [f('line1', 'address line 1'), f('line2', 'address line 2'), f('city', 'town / city', { half: true }), f('county', 'county', { half: true }), f('region', 'nation (england, scotland…)', { half: true }), f('postcode', 'postcode', { half: true })],
-    lines: (v) => [v.line1, v.line2, v.city, v.county, v.region, v.postcode],
+    fields: [f('line1', 'address line 1'), f('line2', 'address line 2 (optional)'), f('city', 'town / city', { half: true }), f('county', 'county', { half: true }), f('postcode', 'postcode', { half: true })],
+    lines: (v) => [v.line1, v.line2, v.city, v.county, v.postcode],
   },
   US: {
     chip: 'us', name: 'united states', cc: 'us', postcodeHint: 'e.g. 90210',

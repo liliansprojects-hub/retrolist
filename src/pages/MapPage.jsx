@@ -728,7 +728,7 @@ function PlaceEditor({ folderId, place, folders, onClose, onSave, onDelete }) {
           )}
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="place name" className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
           <input value={subheading} onChange={(e) => setSubheading(e.target.value)} placeholder="subheading" className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
-          <AddressPicker value={addr} onChange={setAddr} />
+          <AddressPicker value={addr} onChange={setAddr} onPickName={(n) => setName((cur) => cur.trim() ? cur : n)} />
           <div className="flex gap-2">
             <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="google maps link" className="flex-1 px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
             {url && (
