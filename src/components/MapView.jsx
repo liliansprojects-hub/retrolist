@@ -65,7 +65,6 @@ const CRITICAL_CSS = `
 .rl-pin{cursor:pointer;position:relative;width:${PIN_W}px;height:${PIN_H}px}
 .rl-pin-body{transform-origin:50% 100%;transition:transform .18s ease-out;filter:drop-shadow(0 1.5px 1.5px rgba(0,0,0,.35))}
 .rl-pin.sel{z-index:5}
-.rl-pin.sel .rl-pin-body{transform:scale(1.25)}
 .rl-label{display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:2px;font:700 11px/1.3 var(--font-body,system-ui),sans-serif;text-transform:lowercase;color:#202124;background:rgba(255,255,255,.92);padding:1px 6px;border-radius:6px;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 4px rgba(0,0,0,.25);pointer-events:none}
 .rl-labels-on .rl-label,.rl-pin.sel .rl-label{display:block}
 .rl-me{width:16px;height:16px;border-radius:50%;background:#1a73e8;border:3px solid #fff;box-shadow:0 0 0 6px rgba(26,115,232,.25)}
@@ -119,6 +118,30 @@ function popupContent(p) {
   return box;
 }
 
+
+// ZOOMING OUT: pins are a fixed size on screen, so places that are close in real life would look like
+// separate big points. Instead, pins whose on-screen distance is small are drawn pulled towards each
+// other (weighted average of the neighbours), completely overlapping once they are about CLUSTER_NEAR px
+// apart, and sitting at their exact spot once they are more than CLUSTER_FAR px apart. Zoomed in, nothing moves.
+// (about 1 km apart overlaps completely at city-wide zoom; ~1.5 km a little further out)
+const CLUSTER_NEAR = 45;
+const CLUSTER_FAR = 90;
+function clusterOffsets(map, items) {
+  const pts = items.map(([id, lng, lat]) => { const q = map.project([lng, lat]); return { id, x: q.x, y: q.y }; });
+  const out = new Map();
+  pts.forEach((a) => {
+    let sw = 1, sx = a.x, sy = a.y;
+    pts.forEach((b) => {
+      if (a === b) return;
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      const w = d <= CLUSTER_NEAR ? 1 : d >= CLUSTER_FAR ? 0 : (CLUSTER_FAR - d) / (CLUSTER_FAR - CLUSTER_NEAR);
+      if (w > 0) { sw += w; sx += w * b.x; sy += w * b.y; }
+    });
+    out.set(a.id, [Math.round((sx / sw - a.x) * 10) / 10, Math.round((sy / sw - a.y) * 10) / 10]);
+  });
+  return out;
+}
+
 const MapView = forwardRef(function MapView({ places = [], selectedId = null, onSelect, onMapClick, pickMode = false, className = '' }, ref) {
   const boxRef = useRef(null);
   const mapRef = useRef(null);
@@ -130,6 +153,8 @@ const MapView = forwardRef(function MapView({ places = [], selectedId = null, on
   const tiltRef = useRef(false);
   const cbRef = useRef({});
   const lastMarkerClick = useRef(0);
+  const clusterRef = useRef(() => {});
+  const rafRef = useRef(0);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'slow'
   cbRef.current = { onSelect, onMapClick, pickMode };
@@ -251,6 +276,12 @@ const MapView = forwardRef(function MapView({ places = [], selectedId = null, on
 
     const setLabels = () => boxRef.current && boxRef.current.classList.toggle('rl-labels-on', map.getZoom() >= 12);
     map.on('zoom', setLabels);
+    const schedCluster = () => {
+      if (rafRef.current) return;
+      rafRef.current = requestAnimationFrame(() => { rafRef.current = 0; clusterRef.current(); });
+    };
+    map.on('zoom', schedCluster);
+    map.on('pitch', schedCluster);
     setLabels();
 
     map.on('click', (e) => {
@@ -288,6 +319,14 @@ const MapView = forwardRef(function MapView({ places = [], selectedId = null, on
     const m = mapRef.current;
     if (!m) return;
     const list = placesRef.current;
+    clusterRef.current = () => {
+      const mm = mapRef.current;
+      if (!mm) return;
+      const items = [];
+      markersRef.current.forEach((entry, id) => { items.push([id, entry.place.lng, entry.place.lat]); });
+      const off = clusterOffsets(mm, items);
+      markersRef.current.forEach((entry, id) => { const o = off.get(id) || [0, 0]; entry.marker.setOffset(o); });
+    };
     const seen = new Set();
     // southern pins sit lower on screen, so they are added last (on top)
     [...list].sort((a, b) => b.lat - a.lat).forEach((p) => {
@@ -324,6 +363,7 @@ const MapView = forwardRef(function MapView({ places = [], selectedId = null, on
     markersRef.current.forEach((entry, id) => {
       if (!seen.has(id)) { entry.marker.remove(); markersRef.current.delete(id); }
     });
+    clusterRef.current();
   }, [placesKey]);
 
   // selected pin: enlarged, on top, with its info card
