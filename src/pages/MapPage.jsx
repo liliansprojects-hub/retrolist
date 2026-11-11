@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useLocation } from 'react-router-dom';
-import { Map as PigeonMap } from 'pigeon-maps';
-import { Plus, Minus, Globe, X, FolderPlus, ChevronDown, ChevronRight, ChevronLeft, Trash2, MapPin, Link2, Pencil, MoreVertical, Crosshair } from 'lucide-react';
+import MapView from '@/components/MapView';
+import { Plus, Minus, Globe, Box, LocateFixed, X, FolderPlus, ChevronDown, ChevronRight, ChevronLeft, Trash2, MapPin, Link2, Pencil, MoreVertical, Crosshair } from 'lucide-react';
 import {
   getMapFolders, saveMapFolders, addMapFolder, deleteMapFolder, updateMapFolder, addPlace, deletePlace, updatePlace,
 } from '@/lib/store';
@@ -10,36 +10,18 @@ import ColorPicker from '@/components/ColorPicker';
 import { useSync } from '@/lib/SyncContext';
 import { cn } from '@/lib/utils';
 import { resolveCoords, parseManualCoords, geocode, getLastHint } from '@/lib/mapsResolve';
-import { fitPoints, clampZoom, TILE, MIN_ZOOM, MAX_ZOOM } from '@/lib/mapView';
-import { buildPins } from '@/components/MapPins';
 import { WifiOff } from 'lucide-react';
 
-// NOTE ON THE MAP LIBRARY: this used to be react-leaflet. Leaflet's own
-// layout model depends entirely on a big external stylesheet
-// (leaflet.css) to give its tile/pane DOM the right position/overflow
-// rules — if that stylesheet doesn't actually apply for any reason (a
-// bundler quirk, a CSP, a build target that drops it), NOTHING renders and
-// there's no error, just a permanently blank box, which is exactly what
-// kept happening here even after fixing the zoom/sizing bugs underneath
-// it. pigeon-maps needs no external stylesheet at all — it lays itself out
-// with plain inline styles it sets itself — which removes that entire
-// failure mode outright. It's also a much smaller, dependency-free
-// library, so this is a straight simplification, not just a swap.
+// MAP LIBRARY: MapLibre GL (see @/components/MapView) — vector tiles with building shapes, smooth
+// zooming, and a raster fallback if the vector style can't load. It replaced pigeon-maps, whose flat
+// OpenStreetMap raster tiles had no building detail. Pins, popups, fit-to-pins and fly-to all live
+// in MapView and are driven from here through a ref.
 
 // places the background sweep has already tried to locate this session, so an
 // unlocatable one isn't re-queried (and re-waited-on) every time the page opens
 const sweepTried = new Set();
 
 const folderColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
-
-// projection / fit-to-pins maths lives in @/lib/mapView, and the pins
-// themselves (one waterdrop pin per place, no clustering) in
-// @/components/MapPins.
-
-// explicit tile source (the canonical OpenStreetMap host): the standard OSM
-// style, which draws parks and green space, water, roads and building
-// footprints around every location.
-const osmTiles = (x, y, z) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
 
 const hasCoords = (p) =>
   p.lat != null && p.lng != null && p.lat !== '' && p.lng !== '' &&
@@ -78,8 +60,9 @@ export default function MapPage() {
   const [filterSignal, setFilterSignal] = useState(0);
   const fitMode = useRef('fit'); // 'world' | 'fit' — how the next explicit re-frame behaves
   const [folderMenu, setFolderMenu] = useState(null);
-  const [center, setCenter] = useState([20, 0]);
-  const [zoom, setZoom] = useState(2);
+  const mapApi = useRef(null);
+  const [tilted, setTilted] = useState(false);
+  const [resolveInfo, setResolveInfo] = useState('');
   const [selectedPin, setSelectedPin] = useState(null);
   // "tap the map to place this pin exactly" mode — the guaranteed-precise fallback when a link can't be resolved exactly
   const [pickFor, setPickFor] = useState(null); // { folderId, placeId, name }
@@ -129,8 +112,8 @@ export default function MapPage() {
     : allPlaces.filter((p) => activeFolders.includes(p.folderId));
   const mappedPlaces = visiblePlaces.filter(hasCoords).map((p) => ({ ...p, lat: Number(p.lat), lng: Number(p.lng) }));
 
-  // track the map's actual pixel size so fitPoints() can compute a zoom
-  // level that really fits the container, not a guess.
+  // track the map's actual pixel size so the map can frame the pins
+  // to fit the container, not a guess.
   useEffect(() => {
     if (!mapWrapRef.current) return;
     const el = mapWrapRef.current;
@@ -159,14 +142,12 @@ export default function MapPage() {
     // 'all' / globe / map button: pull all the way out so the whole world is in
     // frame — every pin, wherever it is on Earth, is then on screen at once
     if (pendingFit.current === 'explicit' && (fitMode.current === 'world' || !pts.length)) {
-      setCenter([20, 0]);
-      setZoom(clampZoom(Math.min(Math.log2(mapSize.w / TILE), Math.log2(mapSize.h / TILE))));
+      mapApi.current && mapApi.current.fit([], { world: true });
       pendingFit.current = false;
       return;
     }
     if (!pts.length) return;
-    const fit = fitPoints(pts, mapSize.w, mapSize.h);
-    if (fit) { setCenter(fit.center); setZoom(fit.zoom); }
+    mapApi.current && mapApi.current.fit(pts);
     pendingFit.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterSignal, mapSize.w, mapSize.h, mappedPlaces.length]);
@@ -194,8 +175,7 @@ export default function MapPage() {
   useEffect(() => {
     if (flyTarget && flyTarget.lat != null) {
       pendingFit.current = false;
-      setCenter([flyTarget.lat, flyTarget.lng]);
-      setZoom((z) => (flyTarget.keepZoom ? Math.max(Math.round(z), 14) : 17));
+      mapApi.current && mapApi.current.flyTo({ lat: flyTarget.lat, lng: flyTarget.lng, keepZoom: !!flyTarget.keepZoom, zoom: 17 });
       // select whichever place this fly-to is for (or none, for a plain
       // re-center) — clearing it here used to close a popup the same tap had
       // just opened.
@@ -222,8 +202,7 @@ export default function MapPage() {
   // zoom in / out one step; if a pin is selected, keep it centred while zooming
   const zoomBy = (d) => {
     const sel = selectedPin ? mappedPlaces.find((p) => p.id === selectedPin) : null;
-    if (sel) setCenter([sel.lat, sel.lng]);
-    setZoom((z) => clampZoom(Math.round(z) + d));
+    mapApi.current && mapApi.current.zoomBy(d, sel ? [sel.lat, sel.lng] : null);
   };
 
   const handleAddFolder = () => {
@@ -275,6 +254,7 @@ export default function MapPage() {
             refresh();
             setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
             // name/address searches are a best guess, not the exact pin — say so
+            setResolveInfo(`${Number(coords.lat).toFixed(5)}, ${Number(coords.lng).toFixed(5)}`);
             setResolveResult(coords.approx ? 'approx' : 'found');
             if (coords.approx) setPickFor({ folderId: realFolderId, placeId: targetPlaceId, name: data.name });
           } else {
@@ -285,6 +265,7 @@ export default function MapPage() {
             // any third-party service staying up: pasting coordinates
             // directly (tap-and-hold a spot in Google Maps, copy the
             // "lat, lng" shown at the bottom).
+            setResolveInfo('');
             setResolveResult('failed');
             setPickFor({ folderId: realFolderId, placeId: targetPlaceId, name: data.name, hint: getLastHint() || data.address || '' });
           }
@@ -346,9 +327,9 @@ export default function MapPage() {
             'mt-[calc(env(safe-area-inset-top,0px)+8px)] text-[11px] px-3 py-1.5 rounded-full lowercase shadow-lg text-center max-w-[90%]',
             resolveResult === 'failed' ? 'bg-destructive text-destructive-foreground' : 'bg-black/80 text-white'
           )}>
-            {resolveResult === 'found' ? 'location found'
-              : resolveResult === 'approx' ? 'approximate spot found from the name — tap the map to place it exactly'
-              : "couldn't locate that link — tap the map to place the pin yourself"}
+            {resolveResult === 'found' ? `pinned at ${resolveInfo}`
+              : resolveResult === 'approx' ? `approximate spot (${resolveInfo}) — tap the map to place it exactly`
+              : (resolveInfo || "couldn't locate that link — tap the map to place the pin yourself")}
           </span>
         </div>
       )}
@@ -387,18 +368,14 @@ export default function MapPage() {
           is always visible. */}
       <div ref={mapWrapRef} data-allow-pinch="true" style={{ touchAction: 'none' }} className={`relative rounded-2xl overflow-hidden mb-4 transition-all duration-300 ${editingPlace ? 'h-36' : 'h-64'}`}>
         {mapSize.w > 0 && (
-          <PigeonMap
-            center={center}
-            zoom={zoom}
-            width={mapSize.w}
-            height={mapSize.h}
-            provider={osmTiles}
-            minZoom={MIN_ZOOM}
-            maxZoom={MAX_ZOOM}
-            animate
-            animateMaxScreens={10}
-            onBoundsChanged={({ center: c, zoom: z }) => { setCenter(c); setZoom(z); }}
-            onClick={({ latLng }) => {
+          <MapView
+            ref={mapApi}
+            className="absolute inset-0"
+            places={mappedPlaces}
+            selectedId={selectedPin}
+            pickMode={!!pickFor}
+            onSelect={(p) => setFlyTarget({ lat: p.lat, lng: p.lng, placeId: p.id, keepZoom: true, ts: Date.now() })}
+            onMapClick={({ latLng }) => {
               if (pickFor && latLng) {
                 updatePlace(pickFor.folderId, pickFor.placeId, { lat: latLng[0], lng: latLng[1] });
                 setSelectedPin(pickFor.placeId);
@@ -408,14 +385,7 @@ export default function MapPage() {
               }
               setSelectedPin(null);
             }}
-          >
-            {buildPins({
-              places: mappedPlaces,
-              zoom,
-              selected: selectedPin,
-              onPinClick: (p) => setFlyTarget({ lat: p.lat, lng: p.lng, placeId: p.id, keepZoom: true, ts: Date.now() }),
-            })}
-          </PigeonMap>
+          />
         )}
         {/* on-screen controls: drag to pan and pinch / scroll still work, but
             these give a reliable way to zoom from any pin, plus a one-tap
@@ -425,13 +395,15 @@ export default function MapPage() {
             { label: 'zoom in', Icon: Plus, onClick: () => zoomBy(1) },
             { label: 'zoom out', Icon: Minus, onClick: () => zoomBy(-1) },
             { label: 'show all pins', Icon: Globe, onClick: showAll },
-          ].map(({ label, Icon, onClick }) => (
+            { label: tilted ? 'flat map' : '3d buildings', Icon: Box, onClick: () => setTilted(!!(mapApi.current && mapApi.current.toggleTilt())), active: tilted },
+            { label: 'my location', Icon: LocateFixed, onClick: () => mapApi.current && mapApi.current.locate((msg) => { setResolveResult('failed'); setResolveInfo(msg); setTimeout(() => setResolveResult(null), 3000); }) },
+          ].map(({ label, Icon, onClick, active }) => (
             <button
               key={label}
               type="button"
               aria-label={label}
               onClick={onClick}
-              className="w-9 h-9 rounded-full bg-white/95 text-black shadow-md border border-black/10 flex items-center justify-center active:scale-90 transition-transform"
+              className={cn('w-9 h-9 rounded-full shadow-md border border-black/10 flex items-center justify-center active:scale-90 transition-transform', active ? 'bg-black text-white' : 'bg-white/95 text-black')}
             >
               <Icon className="w-4 h-4" />
             </button>
@@ -444,13 +416,12 @@ export default function MapPage() {
             {pickFor.hint && (
               <button type="button" className="touch-44 px-2 underline" onClick={async () => {
                 const g = await geocode(pickFor.hint);
-                if (g) { setZoom(12); setCenter([g.lat, g.lng]); }
+                if (g && mapApi.current) mapApi.current.flyTo({ lat: g.lat, lng: g.lng, zoom: 12 });
               }}>find</button>
             )}
             <button type="button" onClick={() => setPickFor(null)} className="touch-44 px-2 text-white/70">cancel</button>
           </div>
         )}
-        <span className="absolute bottom-1 right-1.5 text-[9px] text-black/40 bg-white/60 px-1 rounded pointer-events-none">© OpenStreetMap</span>
         {mapIsOffline && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/80 backdrop-blur-sm">
             <WifiOff className="w-6 h-6 text-muted-foreground" />

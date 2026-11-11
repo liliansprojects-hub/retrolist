@@ -251,7 +251,7 @@ export default function Home() {
     setConfirmDelete(false);
     exitSelect();
     refresh();
-    showNotice({ text: `${n} deleted`, undo: () => { saveFolders(snapshot); refresh(); setNotice(null); } }, 8000);
+    showNotice({ text: `${n} deleted`, undo: () => { saveFolders(snapshot); refresh(); setNotice(null); } }, 1000);
   };
 
   const TYPE_MAP = { notes: 'note', reminders: 'reminder', todos: 'todo', folders: 'folder', albums: 'album' };
@@ -473,7 +473,7 @@ export default function Home() {
           <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
           <div className="relative w-full max-w-xs rounded-3xl bg-card border border-border p-5 text-center" onClick={(e) => e.stopPropagation()}>
             <p className="text-sm font-semibold lowercase mb-1">move {selectedIds.length} to the bin?</p>
-            <p className="text-xs text-muted-foreground lowercase mb-4">folders take everything inside them too. you can undo for a few seconds.</p>
+            <p className="text-xs text-muted-foreground lowercase mb-4">folders take everything inside them too. you can undo for a moment right after.</p>
             <div className="flex gap-2">
               <button onClick={() => setConfirmDelete(false)} className="touch-44 flex-1 py-2.5 rounded-2xl bg-muted text-xs font-medium lowercase">keep</button>
               <button onClick={doDeleteSelected} className="touch-44 flex-1 py-2.5 rounded-2xl bg-destructive text-destructive-foreground text-xs font-medium lowercase">delete</button>

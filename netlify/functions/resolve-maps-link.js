@@ -90,7 +90,11 @@ async function resolve(startUrl, deadline) {
     break;
   }
 
-  if (best) return found(best, best.finalUrl || current, false);
+  if (best) {
+    // a bare map-camera position (rank 1) is only believable on a real place page
+    const onPlacePage = /\/maps\/place\//.test(best.finalUrl || current) && !/consent\.google/.test(best.finalUrl || current);
+    return found(best, best.finalUrl || current, best.rank < 2 && !onPlacePage);
+  }
 
   // No exact coordinates anywhere. Do NOT guess by searching the name here: a name
   // search has no idea which country is meant and was dropping pins in the US.
@@ -136,25 +140,40 @@ function pair(a, b) {
 // the like show up as placeholder map centres in pages served to scripts. A
 // result sitting on one of them (and not backed by the exact !3d!4d pin) is
 // treated as "not found" rather than plotted in the wrong country.
-const DEFAULT_SPOTS = [[37.0902, -95.7129], [39.8283, -98.5795], [37.4220, -122.0841], [37.4219, -122.0840], [37.3861, -122.0839], [37.7749, -122.4194], [0, 0]];
+const DEFAULT_SPOTS = [[39.8097, -98.5556], [37.0902, -95.7129], [39.8283, -98.5795], [37.4220, -122.0841], [37.4219, -122.0840], [37.3861, -122.0839], [37.7749, -122.4194], [0, 0]];
 function isDefaultSpot(c) {
   return !!c && DEFAULT_SPOTS.some(([la, ln]) => Math.abs(c.lat - la) < 0.06 && Math.abs(c.lng - ln) < 0.06);
 }
 
-// Like extractCoords but also says HOW trustworthy the match is, so a redirect
-// chain can keep following until it finds the pin itself instead of settling on
-// the first camera position it sees:  3 = the pin (!3d!4d), 2 = the link's
-// target (q= ll= center= destination=), 1 = the map camera (@lat,lng)
-function extractCoordsRanked(text) {
-  if (!text) return null;
-  const s = String(text);
+const safeDecodeAll = (str) => { try { return decodeURIComponent(str); } catch { return str; } };
+function rankedFrom(s) {
   let m = s.match(new RegExp(`!3d(${NUM})!4d(${NUM})`));
   if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 3 }; }
-  m = s.match(new RegExp(`[?&;](?:center|ll|q|query|destination|daddr)=(${NUM})(?:%2C|%2c|,)\\s*(${NUM})`));
+  m = s.match(new RegExp(`[?&;](?:center|ll|q|query|destination|daddr)=(?:loc:)?(${NUM})(?:%2C|%2c|,)\\s*(${NUM})`));
   if (m) { const c = pair(m[1], m[2]); if (c && !isDefaultSpot(c)) return { ...c, rank: 2 }; }
+  m = s.match(new RegExp(`/maps/(?:place|search|dir)/(?:[^/@?#]*/)?(${NUM}),\\s*(${NUM})(?:[/?#@]|$)`));
+  if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 2 }; }
   m = s.match(new RegExp(`@(${NUM}),(${NUM})`));
   if (m) { const c = pair(m[1], m[2]); if (c && !isDefaultSpot(c)) return { ...c, rank: 1 }; }
   return null;
+}
+export function extractCoordsRanked(text) {
+  if (!text) return null;
+  const raw = String(text);
+  const variants = [raw];
+  if (/%[0-9a-f]{2}/i.test(raw)) { const d = safeDecodeAll(raw); if (d !== raw) variants.push(d); } // e.g. consent wrappers: ...%40lat%2Clng
+  let best = null;
+  for (const v of variants) { const r = rankedFrom(v); if (r && (!best || r.rank > best.rank)) best = r; }
+  return best;
+}
+
+// Plain "give me coordinates" form of the above (no rank), plus the JSON lat/lng shape.
+export function extractCoords(text) {
+  if (!text) return null;
+  const r = extractCoordsRanked(text);
+  if (r) return { lat: r.lat, lng: r.lng };
+  const m = String(text).match(new RegExp(`"lat['"]?\\s*:\\s*(${NUM})[^}]{0,200}?"lng['"]?\\s*:\\s*(${NUM})`));
+  return m ? pair(m[1], m[2]) : null;
 }
 
 // The ONLY place coordinates are read out of a web PAGE (as opposed to a URL):
@@ -169,21 +188,4 @@ function ogImageCenter(html) {
   if (!content) return null;
   const r = extractCoordsRanked(content[1].replace(/&amp;/g, '&'));
   return r ? { lat: r.lat, lng: r.lng } : null;
-}
-
-// same rules as src/lib/mapsResolve.js (kept self-contained so this function
-// has no dependency on the app bundle). !3d/!4d is the pin itself; @lat,lng
-// is only the map camera position, so it is checked last.
-function extractCoords(text) {
-  if (!text) return null;
-  const s = String(text);
-  let m = s.match(new RegExp(`!3d(${NUM})!4d(${NUM})`));
-  if (m) return pair(m[1], m[2]);
-  m = s.match(new RegExp(`[?&;](?:center|ll|q|query|destination|daddr)=(${NUM})(?:%2C|%2c|,)\\s*(${NUM})`));
-  if (m) return pair(m[1], m[2]);
-  m = s.match(new RegExp(`@(${NUM}),(${NUM})`));
-  if (m) return pair(m[1], m[2]);
-  m = s.match(new RegExp(`"lat['"]?\\s*:\\s*(${NUM})[^}]{0,200}?"lng['"]?\\s*:\\s*(${NUM})`));
-  if (m) return pair(m[1], m[2]);
-  return null;
 }

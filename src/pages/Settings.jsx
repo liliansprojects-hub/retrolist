@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Share2, Moon, Sun, Monitor, Type, AlertCircle, LogOut, ChevronRight, Play, Check, FolderOpen, FileText, Trash2,
+  Share2, Moon, Sun, Monitor, Type, AlertCircle, LogOut, ChevronRight, Check, FolderOpen, FileText, Trash2,
 } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 import { useLocalAuth } from '@/lib/LocalAuthContext';
@@ -9,13 +9,11 @@ import { getProfile, saveProfile, deleteAccount, createShare, getSettings, saveS
 import { deleteAccountRemote } from '@/lib/cloudSync';
 import { getAccount, clearAccount, pbkdf2 } from '@/lib/localAuth';
 import ColorPicker from '@/components/ColorPicker';
-import AlarmNotifCard from '@/components/AlarmNotifCard';
 import ImageUpload from '@/components/ImageUpload';
 import ShareDialog from '@/components/ShareDialog';
 import EmailSection from '@/components/EmailSection';
 import { getAllPhotos, getAllFiles } from '@/lib/store';
 import { cn } from '@/lib/utils';
-import { SOUNDS, VIBRATIONS, preview } from '@/lib/alarmAudio';
 
 const FONTS = [
   { id: 'nunito', label: 'nunito', style: { fontFamily: 'Nunito, sans-serif' } },
@@ -215,74 +213,6 @@ export default function Settings() {
               <span className="w-6 h-6 rounded-full border border-border" style={{ backgroundColor: settings.periodColor || accent }} />
             </button>
           )}
-        </div>
-      </section>
-
-      {/* alarms */}
-      <section className="mb-6">
-        <h2 className="text-xs font-semibold text-muted-foreground uppercase mb-3">alarms</h2>
-        <div className="rounded-2xl border border-border p-4 space-y-4">
-          <div>
-            <label className="text-xs font-medium text-muted-foreground lowercase block mb-1.5">default sound</label>
-            <div className="flex gap-2">
-              <select
-                value={settings.defaultSound}
-                onChange={(e) => updateSettings({ defaultSound: e.target.value })}
-                className="flex-1 px-3 py-2.5 rounded-xl bg-muted text-sm outline-none"
-              >
-                {SOUNDS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-              </select>
-              <button
-                onClick={() => { const v = VIBRATIONS.find((x) => x.id === settings.defaultVibration) || VIBRATIONS[0]; preview(settings.defaultSound || 'classic', v.pattern); }}
-                className="touch-44 px-3 rounded-xl bg-muted flex items-center gap-1 text-xs font-medium lowercase"
-              >
-                <Play className="w-3.5 h-3.5" /> test
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground lowercase block mb-1.5">default vibration</label>
-            <select
-              value={settings.defaultVibration}
-              onChange={(e) => updateSettings({ defaultVibration: e.target.value })}
-              className="w-full px-3 py-2.5 rounded-xl bg-muted text-sm outline-none"
-            >
-              {VIBRATIONS.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
-            </select>
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground lowercase block mb-1.5">default snooze</label>
-            <div className="flex gap-2">
-              {[1, 5, 10].map((m) => (
-                <button
-                  key={m}
-                  onClick={() => updateSettings({ defaultSnooze: m })}
-                  className={cn('touch-44 flex-1 py-2.5 rounded-xl text-sm font-medium lowercase', Number(settings.defaultSnooze) === m ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground')}
-                >
-                  {m}m
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground lowercase block mb-1.5">time format</label>
-            <div className="flex gap-2">
-              {['24h', '12h'].map((f) => (
-                <button
-                  key={f}
-                  onClick={() => updateSettings({ clockFormat: f })}
-                  className={cn('touch-44 flex-1 py-2.5 rounded-xl text-sm font-medium lowercase', settings.clockFormat === f ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground')}
-                >
-                  {f}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <AlarmNotifCard variant="full" />
         </div>
       </section>
 

@@ -37,50 +37,55 @@ export function parseManualCoords(str) {
   return m ? pair(m[1], m[2]) : null;
 }
 
-// Pull coordinates out of a URL or a block of page text. ORDER MATTERS:
-//   !3d..!4d      the pin itself (exact)
-//   center= ll= q= destination=   the target the link points at
-//   @lat,lng      the map CAMERA position — often a little off the pin, so last
-export function extractCoords(text) {
-  if (!text) return null;
-  const s = String(text);
-  let m = s.match(new RegExp(`!3d(${NUM})!4d(${NUM})`));
-  if (m) return pair(m[1], m[2]);
-  m = s.match(new RegExp(`[?&;](?:center|ll|q|query|destination|daddr)=(${NUM})(?:%2C|%2c|,)\\s*(${NUM})`));
-  if (m) return pair(m[1], m[2]);
-  m = s.match(new RegExp(`@(${NUM}),(${NUM})`));
-  if (m) return pair(m[1], m[2]);
-  m = s.match(new RegExp(`"lat['"]?\\s*:\\s*(${NUM})[^}]{0,200}?"lng['"]?\\s*:\\s*(${NUM})`));
-  if (m) return pair(m[1], m[2]);
-  return null;
-}
-
-
+// (coordinate extraction lives below, after the default-spot helpers it depends on)
 
 // Google's own "no real answer" spots — the centre of the US, the Googleplex and
 // the like show up as placeholder map centres in pages served to scripts. A
 // result sitting on one of them (and not backed by the exact !3d!4d pin) is
 // treated as "not found" rather than plotted in the wrong country.
-const DEFAULT_SPOTS = [[37.0902, -95.7129], [39.8283, -98.5795], [37.4220, -122.0841], [37.4219, -122.0840], [37.3861, -122.0839], [37.7749, -122.4194], [0, 0]];
+const DEFAULT_SPOTS = [[39.8097, -98.5556], [37.0902, -95.7129], [39.8283, -98.5795], [37.4220, -122.0841], [37.4219, -122.0840], [37.3861, -122.0839], [37.7749, -122.4194], [0, 0]];
 function isDefaultSpot(c) {
   return !!c && DEFAULT_SPOTS.some(([la, ln]) => Math.abs(c.lat - la) < 0.06 && Math.abs(c.lng - ln) < 0.06);
 }
 export { isDefaultSpot };
 
-// Like extractCoords but also says HOW trustworthy the match is, so a redirect
-// chain can keep following until it finds the pin itself instead of settling on
-// the first camera position it sees:  3 = the pin (!3d!4d), 2 = the link's
-// target (q= ll= center= destination=), 1 = the map camera (@lat,lng)
-export function extractCoordsRanked(text) {
-  if (!text) return null;
-  const s = String(text);
+// Says HOW trustworthy a match is, so a redirect chain can keep following until it finds the pin
+// itself instead of settling on the first camera position it sees:
+//   3 = the pin (!3d..!4d..)                       — the place itself, always wins
+//   2 = the link's target (q= ll= center= destination= /place/lat,lng)
+//   1 = the map CAMERA (@lat,lng)                  — where the viewer was looking, NOT the place
+// A share link made while looking at the whole country carries @39.8097,-98.5556 (the US centre)
+// as its camera even though the place is elsewhere, and is the usual cause of "pinned in the US".
+// Camera positions and targets that sit on one of Google's default spots are therefore ignored.
+const safeDecodeAll = (str) => { try { return decodeURIComponent(str); } catch { return str; } };
+function rankedFrom(s) {
   let m = s.match(new RegExp(`!3d(${NUM})!4d(${NUM})`));
   if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 3 }; }
-  m = s.match(new RegExp(`[?&;](?:center|ll|q|query|destination|daddr)=(${NUM})(?:%2C|%2c|,)\\s*(${NUM})`));
+  m = s.match(new RegExp(`[?&;](?:center|ll|q|query|destination|daddr)=(?:loc:)?(${NUM})(?:%2C|%2c|,)\\s*(${NUM})`));
   if (m) { const c = pair(m[1], m[2]); if (c && !isDefaultSpot(c)) return { ...c, rank: 2 }; }
+  m = s.match(new RegExp(`/maps/(?:place|search|dir)/(?:[^/@?#]*/)?(${NUM}),\\s*(${NUM})(?:[/?#@]|$)`));
+  if (m) { const c = pair(m[1], m[2]); if (c) return { ...c, rank: 2 }; }
   m = s.match(new RegExp(`@(${NUM}),(${NUM})`));
   if (m) { const c = pair(m[1], m[2]); if (c && !isDefaultSpot(c)) return { ...c, rank: 1 }; }
   return null;
+}
+export function extractCoordsRanked(text) {
+  if (!text) return null;
+  const raw = String(text);
+  const variants = [raw];
+  if (/%[0-9a-f]{2}/i.test(raw)) { const d = safeDecodeAll(raw); if (d !== raw) variants.push(d); } // e.g. consent wrappers: ...%40lat%2Clng
+  let best = null;
+  for (const v of variants) { const r = rankedFrom(v); if (r && (!best || r.rank > best.rank)) best = r; }
+  return best;
+}
+
+// Plain "give me coordinates" form of the above (no rank), plus the JSON lat/lng shape.
+export function extractCoords(text) {
+  if (!text) return null;
+  const r = extractCoordsRanked(text);
+  if (r) return { lat: r.lat, lng: r.lng };
+  const m = String(text).match(new RegExp(`"lat['"]?\\s*:\\s*(${NUM})[^}]{0,200}?"lng['"]?\\s*:\\s*(${NUM})`));
+  return m ? pair(m[1], m[2]) : null;
 }
 
 // The ONLY place coordinates are read out of a web PAGE (as opposed to a URL):
@@ -126,7 +131,8 @@ export function parseMapsUrl(url) {
   // loose "lat,lng" anywhere (geo: links and the like) — last resort only,
   // because it can match unrelated numbers
   const loose = u.match(new RegExp(`(${NUM}),(${NUM})`));
-  return loose ? pair(loose[1], loose[2]) : null;
+  const lc = loose ? pair(loose[1], loose[2]) : null;
+  return lc && !isDefaultSpot(lc) ? lc : null;
 }
 
 async function fetchWithTimeout(fetchFn, url, opts = {}, ms = 3000) {
@@ -227,11 +233,14 @@ async function proxyResolve(link, fetchFn, ms) {
   const viaAllOrigins = (async () => {
     const res = await fetchWithTimeout(fetchFn, `https://api.allorigins.win/get?url=${enc}`, {}, ms);
     const json = await res.json();
-    const fromUrl = extractCoordsRanked(json?.status?.url);
-    if (fromUrl && fromUrl.rank >= 2) return { lat: fromUrl.lat, lng: fromUrl.lng };
     const finalUrl = json?.status?.url || '';
-    const og = /\/maps\/place\//.test(finalUrl) ? ogImageCenter(json?.contents) : null;
-    return og && !isDefaultSpot(og) ? og : (fromUrl ? { lat: fromUrl.lat, lng: fromUrl.lng } : null);
+    const fromUrl = extractCoordsRanked(finalUrl);
+    if (fromUrl && fromUrl.rank >= 2) return { lat: fromUrl.lat, lng: fromUrl.lng };
+    const isPlacePage = /\/maps\/place\//.test(finalUrl) && !/consent\.google/.test(finalUrl);
+    const og = isPlacePage ? ogImageCenter(json?.contents) : null;
+    if (og && !isDefaultSpot(og)) return og;
+    // a bare map-camera position is only believable on a real place page
+    return fromUrl && isPlacePage ? { lat: fromUrl.lat, lng: fromUrl.lng } : null;
   })();
   const c = await firstNonNull([viaAllOrigins]);
   return c ? { ...c, source: 'proxy', approx: false } : null;
@@ -242,8 +251,12 @@ export async function resolveCoords({ url, address } = {}, { budgetMs = 3000, fe
   const link = (url || '').trim();
   const parsed = link ? parseMapsUrl(link) : null;
 
-  // 1. already in the link: instant, no network
-  if (parsed && parsed.lat != null) return { lat: parsed.lat, lng: parsed.lng, source: 'link', approx: false };
+  // 1. already in the link: instant, no network. A link that only carries a map-camera position
+  // (@lat,lng, no pin) is flagged approximate so the app asks the person to confirm the spot.
+  if (parsed && parsed.lat != null) {
+    const ranked = extractCoordsRanked(link);
+    return { lat: parsed.lat, lng: parsed.lng, source: 'link', approx: !!ranked && ranked.rank < 2 && !/\/maps\/place\//.test(link) };
+  }
 
   // 2. everything else starts at the same moment
   const isGoogleLink = /goo\.gl|google\.[a-z.]+\/maps|maps\.google/i.test(link);
