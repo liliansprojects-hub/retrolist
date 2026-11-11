@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Plus, Share2, Pencil, Pin, Link as LinkIcon, FolderInput, Copy, ListPlus, Folder as FolderIcon, CheckSquare, List, Star, MapPin, Bell, StickyNote, Palette, Repeat, Calendar, Book, Film, Map as MapIcon, BookHeart, Images, X } from 'lucide-react';
 import {
-  getFolder, getFolders, getChildFolders, addItem, updateItem, deleteItem, moveItem, copyItem, moveItemToRoot, copyItemToRoot, moveFolder, copyFolder, addFolder, updateFolder, deleteFolder, reorderChecklist, reorderItemsByIndex, reorderChildFoldersByIndex, LIST_TYPES,
+  getFolder, getFolders, getChildFolders, addItem, updateItem, deleteItem, moveItem, copyItem, moveItemToRoot, copyItemToRoot, moveFolder, copyFolder, addFolder, updateFolder, deleteFolder, trashFolders, reorderChecklist, reorderItemsByIndex, reorderChildFoldersByIndex, LIST_TYPES,
 } from '@/lib/store';
 import { parentOf } from '@/lib/itemKinds';
 import AlbumView from '@/components/AlbumView';
@@ -268,7 +268,7 @@ export default function FolderDetail() {
         folder={folder}
         onClose={() => setEditOpen(false)}
         onSave={handleUpdateFolder}
-        onDelete={() => { deleteFolder(folder.id); setEditOpen(false); navigate('/'); }}
+        onDelete={() => { trashFolders([folder.id]); setEditOpen(false); navigate('/'); }}
       />
       <FolderEditModal
         open={!!childType}

@@ -425,7 +425,7 @@ export default function MasonryGrid({ folders, editMode, selectMode = false, sel
           <div
             key={f.id}
             data-block-id={f.id}
-            className={`absolute top-0 left-0 ${isDraggingThis || isSettlingThis ? 'shadow-2xl' : ''}`}
+            className={`absolute top-0 left-0 rounded-2xl ${isDraggingThis || isSettlingThis ? 'shadow-2xl' : ''}`}
             style={{
               width: boxW,
               height: boxH,
@@ -434,7 +434,7 @@ export default function MasonryGrid({ folders, editMode, selectMode = false, sel
               transition,
             }}
           >
-            <div onPointerDown={editMode ? (e) => onBodyDown(e, f, p) : undefined} className={editMode ? 'w-full h-full cursor-move' : 'w-full h-full'} style={{ touchAction: editMode ? 'none' : undefined }}>
+            <div onPointerDown={editMode ? (e) => onBodyDown(e, f, p) : undefined} className={editMode ? 'w-full h-full rounded-2xl cursor-move' : 'w-full h-full rounded-2xl'} style={{ touchAction: editMode ? 'none' : undefined }}>
               {full.isItemBlock ? (
                 <ItemBlock folder={full} onClick={editMode ? undefined : () => onOpen(f.id)} onMenu={editMode || selectMode ? undefined : () => onMenu(full)} onToggle={editMode || selectMode || !onToggleItem ? undefined : () => onToggleItem(full)} />
               ) : (

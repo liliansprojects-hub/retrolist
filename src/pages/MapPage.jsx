@@ -327,8 +327,8 @@ export default function MapPage() {
             'mt-[calc(env(safe-area-inset-top,0px)+8px)] text-[11px] px-3 py-1.5 rounded-full lowercase shadow-lg text-center max-w-[90%]',
             resolveResult === 'failed' ? 'bg-destructive text-destructive-foreground' : 'bg-black/80 text-white'
           )}>
-            {resolveResult === 'found' ? `pinned at ${resolveInfo}`
-              : resolveResult === 'approx' ? `approximate spot (${resolveInfo}) — tap the map to place it exactly`
+            {resolveResult === 'found' ? 'location found'
+              : resolveResult === 'approx' ? 'approximate spot found — tap the map to place it exactly'
               : (resolveInfo || "couldn't locate that link — tap the map to place the pin yourself")}
           </span>
         </div>

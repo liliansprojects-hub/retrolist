@@ -6,8 +6,8 @@ import {
   LayoutGrid, GraduationCap, ChefHat, FolderKanban, CheckCheck, ChevronRight, ChevronDown, Folder, FolderPlus, FolderInput, Copy, Images, Search, Pin, ArrowDownUp, X,
 } from 'lucide-react';
 import {
-  getFolders, getRootFolders, addFolder, updateFolder, reorderFolders, deleteFolder, moveFolder, copyFolder,
-  addItem, updateItem, deleteItem, moveItem, copyItem, saveFolders,
+  getFolders, getRootFolders, addFolder, updateFolder, reorderFolders, deleteFolder, trashFolders, restoreFolderTrash, moveFolder, copyFolder,
+  addItem, updateItem, deleteItem, moveItem, copyItem,
   getProfile, addEvent, getSettings, saveSettings, LIST_TYPES,
 } from '@/lib/store';
 import FolderCard from '@/components/FolderCard';
@@ -155,7 +155,7 @@ export default function Home() {
     const fid = editingItem.folderId;
     const f = getFolders().find((x) => x.id === fid);
     if (f && f.isItemBlock) {
-      deleteFolder(fid);
+      trashFolders([fid]);
       setEditingItem(null);
       refresh();
       return;
@@ -188,7 +188,7 @@ export default function Home() {
   };
 
   const handleDelete = () => {
-    if (menuFolder) deleteFolder(menuFolder.id);
+    if (menuFolder) trashFolders([menuFolder.id]);
     setMenuFolder(null);
     refresh();
   };
@@ -222,15 +222,6 @@ export default function Home() {
 
   const selectedFolders = () => folders.filter((f) => selectedIds.includes(f.id));
 
-  // every folder under the given ones (so deleting a folder doesn't strand its sub-folders)
-  const withDescendants = (ids) => {
-    const all = getFolders();
-    const out = new Set(ids);
-    let grew = true;
-    while (grew) { grew = false; all.forEach((f) => { if (f.parent_id && out.has(f.parent_id) && !out.has(f.id)) { out.add(f.id); grew = true; } }); }
-    return [...out];
-  };
-
   const doMoveSelected = (targetId, targetName) => {
     let ok = 0; let fail = 0;
     selectedFolders().forEach((f) => {
@@ -244,14 +235,12 @@ export default function Home() {
   };
 
   const doDeleteSelected = () => {
-    const snapshot = getFolders();
-    const ids = withDescendants(selectedIds);
-    ids.forEach((id) => deleteFolder(id));
+    const entries = trashFolders(selectedIds); // kept in recently deleted, sub-folders and all
     const n = selectedIds.length;
     setConfirmDelete(false);
     exitSelect();
     refresh();
-    showNotice({ text: `${n} deleted`, undo: () => { saveFolders(snapshot); refresh(); setNotice(null); } }, 1000);
+    showNotice({ text: `${n} deleted`, undo: () => { entries.forEach((e) => restoreFolderTrash(e.id)); refresh(); setNotice(null); } }, 1000);
   };
 
   const TYPE_MAP = { notes: 'note', reminders: 'reminder', todos: 'todo', folders: 'folder', albums: 'album' };
@@ -473,7 +462,7 @@ export default function Home() {
           <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
           <div className="relative w-full max-w-xs rounded-3xl bg-card border border-border p-5 text-center" onClick={(e) => e.stopPropagation()}>
             <p className="text-sm font-semibold lowercase mb-1">move {selectedIds.length} to the bin?</p>
-            <p className="text-xs text-muted-foreground lowercase mb-4">folders take everything inside them too. you can undo for a moment right after.</p>
+            <p className="text-xs text-muted-foreground lowercase mb-4">folders take everything inside them too. they go to recently deleted, where you can restore them in full.</p>
             <div className="flex gap-2">
               <button onClick={() => setConfirmDelete(false)} className="touch-44 flex-1 py-2.5 rounded-2xl bg-muted text-xs font-medium lowercase">keep</button>
               <button onClick={doDeleteSelected} className="touch-44 flex-1 py-2.5 rounded-2xl bg-destructive text-destructive-foreground text-xs font-medium lowercase">delete</button>
@@ -515,7 +504,7 @@ export default function Home() {
         folder={editFolder}
         onClose={() => setEditFolder(null)}
         onSave={handleUpdate}
-        onDelete={editFolder ? () => { deleteFolder(editFolder.id); setEditFolder(null); refresh(); } : undefined}
+        onDelete={editFolder ? () => { trashFolders([editFolder.id]); setEditFolder(null); refresh(); } : undefined}
       />
       <EventModal
         open={eventOpen}
@@ -536,7 +525,7 @@ export default function Home() {
           setReminderFolder(null);
           refresh();
         }}
-        onDelete={reminderFolder ? () => { deleteFolder(reminderFolder.id); setReminderOpen(false); setReminderFolder(null); refresh(); } : undefined}
+        onDelete={reminderFolder ? () => { trashFolders([reminderFolder.id]); setReminderOpen(false); setReminderFolder(null); refresh(); } : undefined}
       />
       <ShareDialog
         open={!!shareData}

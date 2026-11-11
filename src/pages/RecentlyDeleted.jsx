@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Check, Trash2, RotateCcw, FileText, AlertTriangle, Download } from 'lucide-react';
+import { ChevronLeft, Check, Trash2, RotateCcw, FileText, AlertTriangle, Download, Folder as FolderIcon, StickyNote } from 'lucide-react';
 import {
   getFileTrash, restoreFileTrash, purgeFileTrash, emptyFileTrash,
   getTrash, restoreFromTrash, purgeTrashItem, getFolder, updateFolder, addFile,
+  getFolderTrash, restoreFolderTrash, purgeFolderTrash, emptyFolderTrash,
 } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import PhotoViewer from '@/components/PhotoViewer';
@@ -32,6 +33,7 @@ export default function RecentlyDeleted() {
 
   // merge album trash + my-files trash into one list
   const items = [
+    ...getFolderTrash().map((t) => ({ ...t, bin: 'folder' })), // deleted main-page folders / items
     ...getTrash().map((t) => ({ ...t, bin: 'album' })),
     ...getFileTrash().map((t) => ({ ...t, bin: 'files' })),
   ];
@@ -43,7 +45,9 @@ export default function RecentlyDeleted() {
   const selectAll = () => { if (selected.size === items.length) setSelected(new Set()); else setSelected(new Set(items.map((_, i) => i))); };
 
   const restoreOne = (it) => {
-    if (it.bin === 'files') {
+    if (it.bin === 'folder') {
+      restoreFolderTrash(it.id);
+    } else if (it.bin === 'files') {
       const r = restoreFileTrash(it.id);
       if (r) {
         // photos restore flatly (type: 'photo', no folder) — getAllPhotos
@@ -63,7 +67,8 @@ export default function RecentlyDeleted() {
   };
 
   const purgeOne = (it) => {
-    if (it.bin === 'files') purgeFileTrash(it.id);
+    if (it.bin === 'folder') purgeFolderTrash(it.id);
+    else if (it.bin === 'files') purgeFileTrash(it.id);
     else purgeTrashItem(it.id);
     setTick((t) => t + 1);
   };
@@ -135,6 +140,12 @@ export default function RecentlyDeleted() {
                     <button onClick={() => (selectMode ? toggleSelect(i) : openViewer(i))} className="block w-full">
                       <img src={it.url} alt="" className={cn('w-full aspect-square object-cover', selectMode && selected.has(i) && 'opacity-50')} />
                     </button>
+                  ) : it.bin === 'folder' ? (
+                    <button onClick={() => (selectMode ? toggleSelect(i) : undefined)} className="flex flex-col items-center justify-center gap-1 w-full aspect-square p-2 text-center" style={it.color && it.color.startsWith('#') ? { backgroundColor: it.color } : undefined}>
+                      {it.isItemBlock ? <StickyNote className="w-6 h-6 text-muted-foreground" /> : <FolderIcon className="w-6 h-6 text-muted-foreground" />}
+                      <span className="text-[10px] lowercase truncate w-full text-foreground">{it.name || (it.isItemBlock ? (it.folders?.[0]?.items?.[0]?.text || 'item') : 'folder')}</span>
+                      {(it.folders || []).length > 1 && <span className="text-[9px] text-muted-foreground lowercase">+{it.folders.length - 1} inside</span>}
+                    </button>
                   ) : (
                     <button onClick={() => (selectMode ? toggleSelect(i) : undefined)} className="flex flex-col items-center justify-center gap-1 w-full aspect-square p-2 text-center">
                       <FileText className="w-6 h-6 text-muted-foreground" />
@@ -180,7 +191,7 @@ export default function RecentlyDeleted() {
 
           {!selectMode && items.length > 0 && (
             <button
-              onClick={() => { emptyFileTrash(); getTrash().forEach((t) => purgeTrashItem(t.id)); setTick((t) => t + 1); }}
+              onClick={() => { emptyFileTrash(); emptyFolderTrash(); getTrash().forEach((t) => purgeTrashItem(t.id)); setTick((t) => t + 1); }}
               className="touch-44 w-full py-2.5 rounded-xl bg-destructive/10 text-destructive text-xs font-medium lowercase"
             >
               empty bin

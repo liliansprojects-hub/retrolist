@@ -601,6 +601,76 @@ export const autoPurgeTrash = () => {
 };
 try { autoPurgeTrash(); } catch {}
 
+// ── folder trash (recently deleted main-page folders / items; auto-purged after 15 days) ──
+// Deleting a folder (or a loose item block) no longer destroys it: a full copy of it — plus
+// everything inside it (sub-folders, their items, media, colours, sizes, reminders) — is kept here,
+// and restoring puts it all back exactly as it was.
+export const getFolderTrash = () => read('folder_trash', []);
+export const saveFolderTrash = (t) => write('folder_trash', t);
+const subtreeIds = (all, rootIds) => {
+  const set = new Set(rootIds);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    all.forEach((f) => { if (f.parent_id && set.has(f.parent_id) && !set.has(f.id)) { set.add(f.id); grew = true; } });
+  }
+  return set;
+};
+// moves the given folders (and everything inside them) to recently deleted.
+// returns the bin entries created, so a caller can undo straight away.
+export const trashFolders = (ids) => {
+  const all = getFolders();
+  const wanted = new Set(ids);
+  // a selected folder that sits inside another selected folder travels with that one
+  const tops = all.filter((f) => wanted.has(f.id) && !(f.parent_id && subtreeIds(all, ids.filter((i) => i !== f.id)).has(f.id)));
+  const gone = new Set();
+  const entries = tops.map((top) => {
+    const group = subtreeIds(all, [top.id]);
+    group.forEach((id) => gone.add(id));
+    return {
+      id: uid(), deletedAt: Date.now(), name: top.name || '', color: top.color || '',
+      isItemBlock: !!top.isItemBlock, parent_id: top.parent_id || null, topId: top.id,
+      folders: all.filter((f) => group.has(f.id)),
+    };
+  });
+  if (!entries.length) return [];
+  gone.forEach((id) => logDelete('folder', id)); // so cloud sync removes them too
+  saveFolders(all.filter((f) => !gone.has(f.id)));
+  saveFolderTrash([...getFolderTrash(), ...entries]);
+  return entries;
+};
+// puts a bin entry back, in full. returns true if it was restored.
+export const restoreFolderTrash = (trashId) => {
+  const bin = getFolderTrash();
+  const entry = bin.find((x) => x.id === trashId);
+  if (!entry) return false;
+  const existing = getFolders();
+  const have = new Set(existing.map((f) => f.id));
+  const parentOk = !entry.parent_id || have.has(entry.parent_id);
+  const now = Date.now();
+  const restored = (entry.folders || [])
+    .filter((f) => !have.has(f.id))
+    .map((f) => {
+      const copy = { ...f, updated_date: now }; // newer than the delete, so sync brings it back too
+      if (f.id === entry.topId && !parentOk) delete copy.parent_id; // its old parent is gone: back to the main page
+      return copy;
+    });
+  const ids = new Set((entry.folders || []).map((f) => f.id));
+  saveDeletedLog(getDeletedLog().filter((d) => !ids.has(d.local_id))); // cancel not-yet-synced deletes
+  saveFolders([...existing, ...restored]);
+  saveFolderTrash(bin.filter((x) => x.id !== trashId));
+  return true;
+};
+export const purgeFolderTrash = (trashId) => saveFolderTrash(getFolderTrash().filter((x) => x.id !== trashId));
+export const emptyFolderTrash = () => saveFolderTrash([]);
+export const autoPurgeFolderTrash = () => {
+  const cutoff = Date.now() - TRASH_TTL;
+  const all = getFolderTrash();
+  const remaining = all.filter((x) => (x.deletedAt || 0) > cutoff);
+  if (remaining.length !== all.length) saveFolderTrash(remaining);
+};
+try { autoPurgeFolderTrash(); } catch {}
+
 // ── my-files trash (photos/files; auto-purged after 15 days) ──
 export const getFileTrash = () => read('files_trash', []);
 export const saveFileTrash = (t) => write('files_trash', t);

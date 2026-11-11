@@ -45,7 +45,6 @@ const pinSvg = (color) =>
 // stylesheet the map must still lay out (markers, canvas, popup) instead of showing a blank box.
 const CRITICAL_CSS = `
 .maplibregl-map{position:relative;overflow:hidden;-webkit-tap-highlight-color:rgb(0 0 0/0)}
-.maplibregl-canvas-container{position:absolute;inset:0}
 .maplibregl-canvas{position:absolute;left:0;top:0}
 .maplibregl-marker{position:absolute;top:0;left:0;will-change:transform}
 .maplibregl-popup{position:absolute;top:0;left:0;display:flex;will-change:transform;pointer-events:none}
@@ -144,6 +143,7 @@ const MapView = forwardRef(function MapView({ places = [], selectedId = null, on
   const cbRef = useRef({});
   const lastMarkerClick = useRef(0);
   const [error, setError] = useState('');
+  const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'slow'
   cbRef.current = { onSelect, onMapClick, pickMode };
   // the page rebuilds its `places` array on every render; only real changes should touch the markers
   const placesRef = useRef(places);
@@ -247,9 +247,11 @@ const MapView = forwardRef(function MapView({ places = [], selectedId = null, on
       if (!loadedOnce && !usedFallback && e && !e.sourceId && !e.tile) useFallback();
     });
     const styleTimer = setTimeout(() => { if (!loadedOnce) useFallback(); }, 9000);
+    const slowTimer = setTimeout(() => { if (!loadedOnce) setStatus('slow'); }, 14000);
 
     const onStyle = () => {
       loadedOnce = true;
+      setStatus('ready');
       if (!usedFallback) tuneBuildings(map);
       readyRef.current = true;
       const q = queueRef.current; queueRef.current = [];
@@ -274,6 +276,7 @@ const MapView = forwardRef(function MapView({ places = [], selectedId = null, on
 
     return () => {
       clearTimeout(styleTimer);
+      clearTimeout(slowTimer);
       ro.disconnect();
       markersRef.current.forEach((m) => m.marker.remove());
       markersRef.current.clear();
@@ -354,7 +357,20 @@ const MapView = forwardRef(function MapView({ places = [], selectedId = null, on
   if (error) {
     return <div className={`flex items-center justify-center text-center text-xs text-muted-foreground lowercase px-6 bg-muted ${className}`}>{error}</div>;
   }
-  return <div ref={boxRef} className={className} style={{ touchAction: 'none' }} />;
+  // The element MapLibre takes over gets its own class `maplibregl-map` with `position: relative`,
+  // which beats a Tailwind `absolute inset-0` on the same element and collapsed the map to zero
+  // height (a blank box). So the map lives in an inner div sized with inline styles, and the caller's
+  // className sits on a plain wrapper.
+  return (
+    <div className={`bg-muted ${className}`} style={{ touchAction: 'none' }}>
+      <div ref={boxRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
+      {status !== 'ready' && (
+        <div className="absolute inset-0 flex items-center justify-center text-[11px] text-muted-foreground lowercase text-center px-6 pointer-events-none">
+          {status === 'slow' ? "the map is taking a long time to load — check your connection" : 'loading map…'}
+        </div>
+      )}
+    </div>
+  );
 });
 
 export default MapView;
