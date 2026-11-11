@@ -1,16 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Search, ChevronDown, ChevronUp, X, MapPin, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { COUNTRIES, COUNTRY_ORDER, emptyFields, addressLines } from '@/lib/addressFormats';
+import { COUNTRIES, emptyFields, addressLines } from '@/lib/addressFormats';
 import { searchAddresses } from '@/lib/addressSearch';
 
 // Exactly the same box as every other field in the place editor: app font, regular size and weight.
 const field = 'w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground placeholder:text-muted-foreground';
 
 // value: { country: 'GB'|'US'|…, fields: {line1,line2,city,county,region,postcode,countryName}, coords: {lat,lng}|null }
+// only these three; any other country a search result lands in is shown under "other"
+const CHIPS = ['GB', 'US', 'OTHER'];
+
 export default function AddressPicker({ value, onChange, onPickName }) {
   const { country, fields, coords } = value;
   const cfg = COUNTRIES[country] || COUNTRIES.OTHER;
+  const isActive = (code) => (code === 'OTHER' ? !['GB', 'US'].includes(country) : country === code);
   const hasAny = Object.values(fields).some((v) => String(v || '').trim());
   const [expanded, setExpanded] = useState(hasAny);
   const [query, setQuery] = useState('');
@@ -53,24 +57,24 @@ export default function AddressPicker({ value, onChange, onPickName }) {
   const lines = addressLines(country, fields);
 
   return (
-    <section className="rounded-2xl border border-border p-3 space-y-3" aria-label="address">
-      <div className="flex items-center justify-between">
-        <h4 className="text-xs font-medium text-muted-foreground lowercase">address</h4>
+    <section className="font-body rounded-2xl border border-border p-4 space-y-4 text-sm" aria-label="address">
+      <div className="flex items-center justify-between px-1">
+        <h4 className="text-base font-semibold lowercase">address</h4>
         {(hasAny || coords) && (
-          <button type="button" onClick={clear} className="touch-44 text-xs font-medium text-muted-foreground lowercase flex items-center gap-0.5"><X className="w-3 h-3" /> clear</button>
+          <button type="button" onClick={clear} className="touch-44 text-sm text-muted-foreground lowercase flex items-center gap-1"><X className="w-3.5 h-3.5" /> clear</button>
         )}
       </div>
 
       {/* country toggle */}
-      <div className="flex gap-1.5 overflow-x-auto no-scrollbar" role="radiogroup" aria-label="country">
-        {COUNTRY_ORDER.map((code) => (
+      <div className="grid grid-cols-3 gap-3" role="radiogroup" aria-label="country">
+        {CHIPS.map((code) => (
           <button
             key={code}
             type="button"
             role="radio"
-            aria-checked={country === code}
+            aria-checked={isActive(code)}
             onClick={() => onChange({ ...value, country: code })}
-            className={cn('touch-44 shrink-0 px-3 h-8 rounded-full text-xs font-medium lowercase transition-colors', country === code ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground')}
+            className={cn('touch-44 w-full h-10 rounded-full text-sm font-medium lowercase transition-colors', isActive(code) ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground')}
           >
             {COUNTRIES[code].chip}
           </button>
@@ -107,17 +111,17 @@ export default function AddressPicker({ value, onChange, onPickName }) {
         </ul>
       )}
       {searched && !busy && results.length === 0 && (
-        <p className="text-xs text-muted-foreground">no matches{country !== 'OTHER' ? ` in ${cfg.name}` : ''} — try the postcode, or enter it yourself</p>
+        <p className="text-sm text-muted-foreground px-1">no matches{country !== 'OTHER' ? ` in ${cfg.name}` : ''} — try the postcode, or enter the address manually</p>
       )}
 
       {/* collapsed summary / expanded full address */}
       {!expanded ? (
-        <button type="button" onClick={() => setExpanded(true)} className="touch-44 w-full flex items-center justify-center gap-1 text-xs font-medium text-muted-foreground lowercase py-1">
-          enter the address yourself <ChevronDown className="w-3 h-3" />
+        <button type="button" onClick={() => setExpanded(true)} className="touch-44 w-full flex items-center justify-center gap-1.5 text-sm text-muted-foreground lowercase">
+          enter address manually <ChevronDown className="w-4 h-4" />
         </button>
       ) : (
-        <div className="space-y-2">
-          <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
             {cfg.fields.map((fd) => (
               <input
                 key={fd.key}
@@ -130,13 +134,13 @@ export default function AddressPicker({ value, onChange, onPickName }) {
               />
             ))}
           </div>
-          {country !== 'OTHER' && <p className="text-xs text-muted-foreground lowercase">{cfg.name}</p>}
+          {country !== 'OTHER' && <p className="text-sm text-muted-foreground lowercase px-1">{cfg.name}</p>}
           {coords && (
-            <p className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="w-3 h-3" /> location found for this address</p>
+            <p className="text-sm text-muted-foreground flex items-center gap-1.5 px-1"><MapPin className="w-3.5 h-3.5" /> location found for this address</p>
           )}
-          {lines.length > 0 && <p className="text-xs text-muted-foreground leading-snug">{lines.join(', ')}</p>}
-          <button type="button" onClick={() => setExpanded(false)} className="touch-44 w-full flex items-center justify-center gap-1 text-xs font-medium text-muted-foreground lowercase py-1">
-            hide <ChevronUp className="w-3 h-3" />
+          {lines.length > 0 && <p className="text-sm text-muted-foreground leading-snug px-1">{lines.join(', ')}</p>}
+          <button type="button" onClick={() => setExpanded(false)} className="touch-44 w-full flex items-center justify-center gap-1.5 text-sm text-muted-foreground lowercase">
+            hide <ChevronUp className="w-4 h-4" />
           </button>
         </div>
       )}
