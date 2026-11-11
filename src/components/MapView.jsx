@@ -62,7 +62,7 @@ const CRITICAL_CSS = `
 .maplibregl-ctrl-attrib{font:600 10px/1.4 var(--font-body,system-ui),sans-serif;background:rgba(255,255,255,.7);padding:0 4px;border-radius:6px 0 0 0}
 .maplibregl-ctrl-attrib a{color:#555;text-decoration:none}
 .maplibregl-ctrl-bottom-right{position:absolute;right:0;bottom:0;z-index:2}
-.rl-pin{cursor:pointer;position:relative;width:${PIN_W}px;height:${PIN_H}px}
+.maplibregl-marker.rl-pin{position:absolute;top:0;left:0;cursor:pointer;width:${PIN_W}px;height:${PIN_H}px}
 .rl-pin-body{transform-origin:50% 100%;transition:transform .18s ease-out;filter:drop-shadow(0 1.5px 1.5px rgba(0,0,0,.35))}
 .rl-pin.sel{z-index:5}
 .rl-label{display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:2px;font:700 11px/1.3 var(--font-body,system-ui),sans-serif;text-transform:lowercase;color:#202124;background:rgba(255,255,255,.92);padding:1px 6px;border-radius:6px;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 4px rgba(0,0,0,.25);pointer-events:none}
@@ -123,9 +123,9 @@ function popupContent(p) {
 // separate big points. Instead, pins whose on-screen distance is small are drawn pulled towards each
 // other (weighted average of the neighbours), completely overlapping once they are about CLUSTER_NEAR px
 // apart, and sitting at their exact spot once they are more than CLUSTER_FAR px apart. Zoomed in, nothing moves.
-// (about 1 km apart overlaps completely at city-wide zoom; ~1.5 km a little further out)
-const CLUSTER_NEAR = 45;
-const CLUSTER_FAR = 90;
+// (about 1 km apart overlaps completely at city zoom 12; ~2 km apart by zoom 11)
+const CLUSTER_NEAR = 100;
+const CLUSTER_FAR = 200;
 function clusterOffsets(map, items) {
   const pts = items.map(([id, lng, lat]) => { const q = map.project([lng, lat]); return { id, x: q.x, y: q.y }; });
   const out = new Map();
