@@ -21,6 +21,10 @@ const BUDGET_MS = 2800;
 const UA = 'retrolist-maps-resolver/1.0';
 const NUM = '-?\\d{1,3}\\.\\d+';
 
+// a link that pins its place by Google's own id identifies it exactly — no matter where the
+// server running this function is — so the camera / page centre it leads to is that place
+const hasPlaceId = (u) => /!1s0x[0-9a-f]+:0x[0-9a-f]+|[?&;](?:ftid|cid)=/i.test(String(u || ''));
+
 const hostAllowed = (h) =>
   h === 'maps.app.goo.gl' || h === 'goo.gl' || /^(www\.|maps\.)?google\.[a-z.]{2,6}$/.test(h);
 
@@ -85,7 +89,7 @@ async function resolve(startUrl, deadline) {
     // a real page: only the og:image static-map centre is trusted (see ogImageCenter)
     let text = '';
     try { text = await res.text(); } catch { /* ignore */ }
-    const og = /\/maps\/place\//.test(current) && !/consent\.google/.test(current) ? ogImageCenter(text) : null;
+    const og = (/\/maps\/place\//.test(current) || hasPlaceId(current)) && !/consent\.google/.test(current) ? ogImageCenter(text) : null;
     if (og && !isDefaultSpot(og)) note({ ...og, rank: best && best.rank >= 2 ? best.rank - 0.5 : 2 }, current, true); // page content is tailored to THIS SERVER's location
     break;
   }
@@ -95,7 +99,7 @@ async function resolve(startUrl, deadline) {
   // location — Netlify functions run in Ohio by default — so anything read from the page, or a bare
   // camera position, is only a guess. Only the exact pin (!3d!4d) or coordinates written in the
   // link itself are trusted; the rest is flagged approx and the app asks the person to tap the spot.
-  const trusted = best.rank >= 3 || (best.rank >= 2 && !best.fromPage);
+  const trusted = best.rank >= 3 || hasPlaceId(best.finalUrl) || hasPlaceId(current) || (best.rank >= 2 && !best.fromPage);
   return found(best, best.finalUrl || current, !trusted);
   }
 

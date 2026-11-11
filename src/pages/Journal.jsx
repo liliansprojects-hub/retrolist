@@ -128,31 +128,31 @@ export default function Journal() {
           either side. The native dropdown arrow is replaced by our own chevron, inset from the edge. */}
       <div className="flex items-center mb-4 gap-2 w-full">
         <div className="flex flex-1 min-w-0 gap-1.5 items-center">
-          <div className="relative flex-1 min-w-0">
+          <div className="relative flex-1 min-w-[104px]">
             <select
               value={month.getMonth()}
               onChange={(e) => setMonth(setMonthOf(month, parseInt(e.target.value)))}
               aria-label="month"
-              className="w-full appearance-none pl-3.5 pr-9 py-2 rounded-xl bg-muted text-xs font-semibold lowercase outline-none focus:ring-1 focus:ring-foreground"
+              className="w-full appearance-none pl-3 pr-8 py-2 rounded-xl bg-muted text-xs font-semibold lowercase outline-none focus:ring-1 focus:ring-foreground"
             >
               {Array.from({ length: 12 }, (_, i) => (
                 <option key={i} value={i}>{format(new Date(2000, i, 1), 'MMMM').toLowerCase()}</option>
               ))}
             </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
           </div>
-          <div className="relative flex-1 min-w-0">
+          <div className="relative w-[74px] shrink-0">
             <select
               value={month.getFullYear()}
               onChange={(e) => setMonth(setYearOf(month, parseInt(e.target.value)))}
               aria-label="year"
-              className="w-full appearance-none pl-3.5 pr-9 py-2 rounded-xl bg-muted text-xs font-semibold outline-none focus:ring-1 focus:ring-foreground"
+              className="w-full appearance-none pl-2.5 pr-6 py-2 rounded-xl bg-muted text-xs font-semibold outline-none focus:ring-1 focus:ring-foreground"
             >
               {yearOptions.map((y) => (
                 <option key={y} value={y}>{y}</option>
               ))}
             </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
           </div>
         </div>
         <div className="flex gap-1.5 shrink-0 items-center">

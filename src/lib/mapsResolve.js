@@ -215,13 +215,6 @@ export async function geocode(query, { fetch: fetchFn = defaultFetch, ms = 2500 
   const q = String(query).trim();
   const bias = getUserBias();
   let local = Promise.resolve(null);
-  // no remembered position yet (first run, location never allowed): fall back to the country of
-  // the device's language setting, e.g. en-GB -> gb. Only a hint — the strict worldwide search
-  // below still runs if nothing turns up there.
-  const localeCc = !bias && typeof navigator !== 'undefined'
-    ? ((navigator.languages || [navigator.language]).map((l) => String(l || '').split('-')[1]).find((r) => r && r.length === 2) || '').toLowerCase()
-    : '';
-  if (!bias && localeCc) local = nominatimSearch(fetchFn, q, `&countrycodes=${localeCc}`, ms, false);
   if (bias) {
     const d = 1.5; // degrees — roughly 100-150 km each way
     const box = `&viewbox=${(bias.lng - d).toFixed(4)},${(bias.lat + d).toFixed(4)},${(bias.lng + d).toFixed(4)},${(bias.lat - d).toFixed(4)}`;
@@ -248,6 +241,7 @@ async function serverResolve(link, fetchFn, ms) {
       if (c && !isDefaultSpot(c)) return { ...c, source: 'server', approx: false };
     }
     if (json && json.hint) lastHint = json.hint;
+    if (json && !json.found && json.finalUrl) console.warn('maps link not resolved; final url:', json.finalUrl);
   } catch { /* function not deployed / errored */ }
   return null;
 }
@@ -294,7 +288,9 @@ export async function resolveCoords({ url, address } = {}, { budgetMs = 3000, fe
   // names are never geocoded. An unresolved link/address goes to "tap the map to place it".
   const queries = [];
   if (parsed && parsed.placeName) lastHint = parsed.placeName;
-  for (const q of [address]) {
+  // A link is only ever read for ITS OWN coordinates. Searching the address/name is a fallback
+  // for entries that have no link at all.
+  for (const q of (link ? [] : [address])) {
     const t = (q || '').trim();
     if (t && !queries.includes(t)) queries.push(t);
   }
