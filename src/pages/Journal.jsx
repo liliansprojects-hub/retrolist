@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval,
-  format, isSameDay, isSameMonth, isToday, addMonths, subMonths,
+  format, isSameDay, isSameMonth, isToday, addMonths, subMonths, addDays, subDays,
   setMonth as setMonthOf, setYear as setYearOf,
 } from 'date-fns';
 import {
@@ -61,6 +61,10 @@ export default function Journal() {
   }, []);
 
   const periodEnabled = !!settings.periodTracking;
+
+  // < > step the selected day by one (the calendar follows into the neighbouring month when it
+  // has to); today selects today's date again
+  const goToDay = (d) => { setSelectedDate(d); setMonth(d); };
 
   const monthStart = startOfMonth(month);
   const monthEnd = endOfMonth(month);
@@ -157,22 +161,22 @@ export default function Journal() {
         </div>
         <div className="flex gap-1.5 shrink-0 items-center">
           <button
-            onClick={() => setMonth(subMonths(month, 1))}
+            onClick={() => goToDay(subDays(selectedDate, 1))}
             className="touch-44 w-8 h-8 rounded-full bg-muted flex items-center justify-center"
-            aria-label="previous month"
+            aria-label="previous day"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={() => setMonth(new Date())}
+            onClick={() => goToDay(new Date())}
             className="touch-44 px-3 h-8 rounded-full bg-muted flex items-center justify-center text-[10px] font-medium lowercase"
           >
             today
           </button>
           <button
-            onClick={() => setMonth(addMonths(month, 1))}
+            onClick={() => goToDay(addDays(selectedDate, 1))}
             className="touch-44 w-8 h-8 rounded-full bg-muted flex items-center justify-center"
-            aria-label="next month"
+            aria-label="next day"
           >
             <ChevronRight className="w-3.5 h-3.5" />
           </button>

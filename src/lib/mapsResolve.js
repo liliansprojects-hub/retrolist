@@ -20,6 +20,9 @@ import { getUserBias } from '@/lib/userBias';
 const FUNCTION_PATH = '/.netlify/functions/resolve-maps-link';
 const NUM = '-?\\d{1,3}\\.\\d+';
 
+// a link that names its place by Google's own id identifies it exactly, wherever the request comes from
+const hasPlaceId = (u) => /!1s0x[0-9a-f]+:0x[0-9a-f]+|[?&;](?:ftid|cid)=/i.test(String(u || ''));
+
 const defaultFetch = (...args) => globalThis.fetch(...args);
 
 function pair(a, b) {
@@ -210,9 +213,11 @@ async function nominatimSearch(fetchFn, q, extra, ms, strict) {
 // around where they are. Only when that finds nothing does the worldwide search count — and that
 // one has to match every word, so a vague address can't be answered by a random place abroad
 // (the old behaviour: pins in Ohio). Both searches start together; the local answer wins.
-export async function geocode(query, { fetch: fetchFn = defaultFetch, ms = 2500 } = {}) {
+export async function geocode(query, { fetch: fetchFn = defaultFetch, ms = 2500, country = '' } = {}) {
   if (!query || !String(query).trim()) return null;
   const q = String(query).trim();
+  // the person picked a country for this address: search ONLY there, never anywhere else
+  if (country) return nominatimSearch(fetchFn, q, `&countrycodes=${String(country).toLowerCase()}`, ms, false);
   const bias = getUserBias();
   let local = Promise.resolve(null);
   if (bias) {
@@ -255,18 +260,21 @@ async function proxyResolve(link, fetchFn, ms) {
     const json = await res.json();
     const finalUrl = json?.status?.url || '';
     const fromUrl = extractCoordsRanked(finalUrl);
-    if (fromUrl && fromUrl.rank >= 2) return { lat: fromUrl.lat, lng: fromUrl.lng };
-    const isPlacePage = /\/maps\/place\//.test(finalUrl) && !/consent\.google/.test(finalUrl);
-    const og = isPlacePage ? ogImageCenter(json?.contents) : null;
+    // The proxy is a server in the US: for a link that doesn't pin its place by id, Google fills
+    // in the page / camera from the PROXY's location (that is how pins ended up in Ohio). So only
+    // the exact pin, coordinates written in the link, or a link that carries Google's place id count.
+    const pinned = hasPlaceId(finalUrl);
+    if (fromUrl && (fromUrl.rank >= 3 || (fromUrl.rank === 2 && !/\/maps\/place\//.test(finalUrl)))) return { lat: fromUrl.lat, lng: fromUrl.lng };
+    if (!pinned || /consent\.google/.test(finalUrl)) return null;
+    const og = ogImageCenter(json?.contents);
     if (og && !isDefaultSpot(og)) return og;
-    // a bare map-camera position is only believable on a real place page
-    return fromUrl && isPlacePage ? { lat: fromUrl.lat, lng: fromUrl.lng } : null;
+    return fromUrl ? { lat: fromUrl.lat, lng: fromUrl.lng } : null;
   })();
   const c = await firstNonNull([viaAllOrigins]);
   return c ? { ...c, source: 'proxy', approx: false } : null;
 }
 
-export async function resolveCoords({ url, address } = {}, { budgetMs = 3000, fetch: fetchFn = defaultFetch } = {}) {
+export async function resolveCoords({ url, address, country } = {}, { budgetMs = 3000, fetch: fetchFn = defaultFetch } = {}) {
   lastHint = null;
   const link = (url || '').trim();
   const parsed = link ? parseMapsUrl(link) : null;
@@ -294,7 +302,7 @@ export async function resolveCoords({ url, address } = {}, { budgetMs = 3000, fe
     const t = (q || '').trim();
     if (t && !queries.includes(t)) queries.push(t);
   }
-  const geocodes = queries.map((q) => deadline(geocode(q, { fetch: fetchFn, ms: budgetMs }), budgetMs));
+  const geocodes = queries.map((q) => deadline(geocode(q, { fetch: fetchFn, ms: budgetMs, country }), budgetMs));
 
   // exact pin (server, then proxies) beats a name-based guess
   const exact = (await server) || (await proxies);
