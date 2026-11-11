@@ -11,7 +11,7 @@
 // Everything except Google is OpenStreetMap data, so a business nobody has added to OSM can only be
 // found through Google Places.
 
-import { COUNTRIES, codeForCc, emptyFields, addressText } from '@/lib/addressFormats';
+import { COUNTRIES, codeForCc, emptyFields } from '@/lib/addressFormats';
 import { getUserBias } from '@/lib/userBias';
 
 const UK_POSTCODE = /^[A-Za-z]{1,2}\d[A-Za-z\d]?\s*\d[A-Za-z]{2}$/;
@@ -21,6 +21,7 @@ const GOOGLE_KEY = (typeof import.meta !== 'undefined' && import.meta.env && imp
 // keeps results short: no repeated town, a county only when it adds something
 function tidy(country, fields) {
   const f = { ...emptyFields(), ...fields };
+  f.postcode = String(f.postcode || '').trim().toUpperCase();
   if (f.county && f.county.toLowerCase() === f.city.toLowerCase()) f.county = '';
   if (f.line2 && (f.line2.toLowerCase() === f.city.toLowerCase())) f.line2 = '';
   return f;
@@ -28,10 +29,17 @@ function tidy(country, fields) {
 
 function build(id, country, fields, lat, lng, poiName) {
   const f = tidy(country, fields);
-  const sub = addressText(country, f);
+  // the first line is always filled: a result with no street gets the place's own name instead
+  if (!f.line1 && poiName) f.line1 = poiName;
+  // search results stay SHORT (first line, town, postcode); picking one fills the boxes with the fuller version
+  const sub = [f.line1, f.city, f.postcode].filter(Boolean).join(', ');
   const title = poiName && !sub.toLowerCase().startsWith(poiName.toLowerCase()) ? poiName : '';
   return { id, title, sub, label: [title, sub].filter(Boolean).join(', '), lat, lng, country, fields: f, poiName: title };
 }
+
+// countries whose layout has a free second line that suits a suburb / district (the US and Canada use
+// it for apartment / unit numbers, Australia keeps the suburb in the city box)
+const lineTwoOk = (country) => !['US', 'CA', 'AU'].includes(country);
 
 const NOT_A_PLACE_NAME = new Set(['place', 'highway', 'boundary', 'postcode', 'building']);
 
@@ -40,11 +48,14 @@ function fromNominatim(item) {
   const country = codeForCc(String(a.country_code || '').toLowerCase());
   const street = a.road || a.pedestrian || a.footway || a.path || '';
   const house = a.house_number || '';
-  const line1 = (country === 'DE' ? `${street} ${house}` : `${house} ${street}`).trim();
+  let line1 = (country === 'DE' ? `${street} ${house}` : `${house} ${street}`).trim();
+  if (a.house_name && !line1.toLowerCase().includes(String(a.house_name).toLowerCase())) line1 = [a.house_name, line1].filter(Boolean).join(', ');
   const ukLike = country === 'GB' || country === 'IE';
+  const city = a.city || a.town || a.village || a.municipality || a.hamlet || '';
   const fields = {
     line1,
-    city: a.city || a.town || a.village || a.municipality || a.hamlet || '',
+    line2: lineTwoOk(country) ? (a.suburb || a.neighbourhood || a.city_district || a.quarter || '') : '',
+    city,
     // UK/Ireland: only a real county ("state_district" there is a region such as "south west england")
     county: a.county || (ukLike ? '' : a.state_district) || '',
     region: ukLike ? '' : (a.state || a.region || ''),
@@ -66,6 +77,7 @@ function fromPhoton(ft) {
   const city = p.city || (p.osm_key === 'place' ? p.name : '') || p.locality || p.district || '';
   const fields = {
     line1, city,
+    line2: lineTwoOk(country) && p.city ? (p.district || p.locality || '') : '',
     county: p.county || '',
     region: ukLike ? '' : (p.state || ''),
     postcode: p.postcode || '',
@@ -87,6 +99,7 @@ function fromGoogle(pl) {
   const fields = {
     line1,
     city: long('postal_town') || long('locality') || long('sublocality') || '',
+    line2: lineTwoOk(country) ? (long('sublocality') || long('neighborhood') || '') : '',
     county: long('administrative_area_level_2') || '',
     region: ukLike ? '' : long('administrative_area_level_1'),
     postcode: long('postal_code'),

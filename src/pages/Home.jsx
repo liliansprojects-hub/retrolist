@@ -274,7 +274,7 @@ export default function Home() {
       <div ref={headerRef} className="sticky top-0 z-20 -mx-4 sm:-mx-5 px-4 sm:px-5 pb-4 mb-2 safe-top bg-background/95 backdrop-blur-sm">
       <header className="mb-6 flex items-end justify-between">
         <div>
-          <h1 className="text-3xl font-extrabold lowercase tracking-tight">retrolist</h1>
+          <h1 className="text-3xl font-extrabold lowercase tracking-tight">retrolist.</h1>
         </div>
         <div className="flex items-center gap-1">
           <button

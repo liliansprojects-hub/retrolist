@@ -9,7 +9,7 @@ import ImageUpload from '@/components/ImageUpload';
 import ColorPicker from '@/components/ColorPicker';
 import { useSync } from '@/lib/SyncContext';
 import { cn } from '@/lib/utils';
-import { resolveCoords, parseManualCoords, geocode, getLastHint } from '@/lib/mapsResolve';
+import { resolveCoords, parseManualCoords, geocode } from '@/lib/mapsResolve';
 import { primeUserBias, getUserBias } from '@/lib/userBias';
 import AddressPicker from '@/components/AddressPicker';
 import { COUNTRIES, ccFor, codeForCc, emptyFields, addressText } from '@/lib/addressFormats';
@@ -95,10 +95,10 @@ export default function MapPage() {
       for (const folder of folders) {
         for (const place of folder.places || []) {
           if (place.lat) continue;
-          if (!place.url && !place.address) continue;
+          if (!place.address) continue;
           if (sweepTried.has(place.id)) continue; // already tried this session
           sweepTried.add(place.id);
-          const coords = await resolveCoords({ url: place.url, address: place.address, name: place.name, country: ccFor(place.addressData?.country) });
+          const coords = await resolveCoords({ address: place.address, country: ccFor(place.addressData?.country) });
           if (coords?.lat && !cancelled) {
             place.lat = coords.lat;
             place.lng = coords.lng;
@@ -107,41 +107,6 @@ export default function MapPage() {
         }
       }
       if (changed && !cancelled) { saveMapFolders(folders); refresh(); }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  // ONE-TIME REPAIR of pins saved by the older, wrong lookups (e.g. UK links plotted in Ohio).
-  // Every place with a link is re-read from the link itself. An exact answer replaces the saved
-  // pin; a link that can't be read exactly loses a saved pin only if it sits in the US while you
-  // are somewhere else (those are the bad guesses). Pins typed in by hand are never touched.
-  useEffect(() => {
-    const FLAG = 'rl-pin-repair-v13';
-    try { if (localStorage.getItem(FLAG)) return undefined; } catch { /* storage blocked */ }
-    if (!navigator.onLine) return undefined;
-    let cancelled = false;
-    (async () => {
-      const mf = getMapFolders();
-      const bias = getUserBias();
-      const inUS = (la, ln) => la > 24 && la < 50 && ln > -125 && ln < -66;
-      let changed = false;
-      for (const folder of mf) {
-        for (const place of folder.places || []) {
-          if (cancelled) return;
-          if (!place.url || place.coordSource === 'manual') continue;
-          const c = await resolveCoords({ url: place.url }).catch(() => null);
-          if (c && !c.approx) {
-            if (Math.abs(Number(place.lat) - c.lat) > 0.002 || Math.abs(Number(place.lng) - c.lng) > 0.002 || place.lat == null) {
-              place.lat = c.lat; place.lng = c.lng; place.coordSource = 'link'; changed = true;
-            }
-          } else if (place.lat != null && inUS(Number(place.lat), Number(place.lng)) && bias && bias.cc && bias.cc !== 'us') {
-            place.lat = null; place.lng = null; changed = true;
-          }
-        }
-      }
-      if (cancelled) return;
-      if (changed) { saveMapFolders(mf); refresh(); }
-      try { localStorage.setItem(FLAG, '1'); } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -286,16 +251,15 @@ export default function MapPage() {
     const manual = touched ? parseManualCoords(data.manualCoords) : null;
     const addrC = data.addressCoords && Number.isFinite(Number(data.addressCoords.lat)) && Number.isFinite(Number(data.addressCoords.lng))
       ? { lat: Number(data.addressCoords.lat), lng: Number(data.addressCoords.lng) } : null;
-    const hasLink = !!(data.url || '').trim();
     const country = ccFor(data.addressData?.country);
 
     const resolveInBackground = (targetPlaceId) => {
       setResolving(true);
       setResolveResult(null);
-      resolveCoords({ url: data.url, address: data.address, name: data.name, country })
+      resolveCoords({ address: data.address, country })
         .then((coords) => {
           if (coords?.lat) {
-            updatePlace(realFolderId, targetPlaceId, { lat: coords.lat, lng: coords.lng, coordSource: coords.source === 'link' || coords.source === 'server' || coords.source === 'proxy' ? 'link' : 'search' });
+            updatePlace(realFolderId, targetPlaceId, { lat: coords.lat, lng: coords.lng, coordSource: 'search' });
             refresh();
             setFlyTarget({ lat: coords.lat, lng: coords.lng, ts: Date.now() });
             setResolveInfo(`${Number(coords.lat).toFixed(5)}, ${Number(coords.lng).toFixed(5)}`);
@@ -310,7 +274,7 @@ export default function MapPage() {
           } else {
             setResolveInfo('');
             setResolveResult('failed');
-            setPickFor({ folderId: realFolderId, placeId: targetPlaceId, name: data.name, hint: getLastHint() || data.address || '' });
+            setPickFor({ folderId: realFolderId, placeId: targetPlaceId, name: data.name, hint: data.address || '' });
           }
         })
         .catch((err) => { console.error('place geocoding failed', err); setResolveResult('failed'); })
@@ -324,24 +288,23 @@ export default function MapPage() {
 
     if (placeId) {
       const existing = editingPlace?.place || {};
-      const linkChanged = (data.url || '') !== (existing.url || '');
       const addrChanged = (data.address || '') !== (existing.address || '');
       // emptying the coordinates box removes a pin (e.g. one placed by an old bad lookup)
       const cleared = touched && !manual && !(data.manualCoords || '').trim() && existing.lat != null;
-      const relocate = !manual && (linkChanged || cleared || (!hasLink && addrChanged));
+      const relocate = !manual && (cleared || addrChanged);
       let coordUpdate = {};
       if (manual) coordUpdate = { lat: manual.lat, lng: manual.lng, coordSource: 'manual' };
-      else if (relocate) coordUpdate = (!hasLink && addrC) ? { lat: addrC.lat, lng: addrC.lng, coordSource: 'address' } : { lat: null, lng: null }; // a changed link never keeps the old pin
+      else if (relocate) coordUpdate = addrC ? { lat: addrC.lat, lng: addrC.lng, coordSource: 'address' } : { lat: null, lng: null }; // a changed address never keeps the old pin
       updatePlace(realFolderId, placeId, { name: data.name, ...common, ...coordUpdate });
       if (manual) setFlyTarget({ lat: manual.lat, lng: manual.lng, ts: Date.now() });
-      else if (relocate && !hasLink && addrC) setFlyTarget({ lat: addrC.lat, lng: addrC.lng, ts: Date.now() });
-      else if (relocate && (hasLink || data.address)) resolveInBackground(placeId);
+      else if (relocate && addrC) setFlyTarget({ lat: addrC.lat, lng: addrC.lng, ts: Date.now() });
+      else if (relocate && data.address) resolveInBackground(placeId);
       setEditingPlace(null);
       refresh();
       return;
     }
 
-    const start = manual || (!hasLink && addrC ? addrC : null);
+    const start = manual || addrC;
     const created = addPlace(realFolderId, {
       name: data.name.trim() || 'unnamed place',
       subheading: data.subheading?.trim() || '',
@@ -358,7 +321,7 @@ export default function MapPage() {
     setEditingPlace(null);
     refresh();
     if (start) setFlyTarget({ lat: start.lat, lng: start.lng, ts: Date.now() });
-    else if (created && (hasLink || data.address?.trim())) resolveInBackground(created.id);
+    else if (created && data.address?.trim()) resolveInBackground(created.id);
   };
 
   return (
@@ -378,7 +341,7 @@ export default function MapPage() {
           )}>
             {resolveResult === 'found' ? 'location found'
               : resolveResult === 'approx' ? 'approximate spot found — tap the map to place it exactly'
-              : (resolveInfo || "couldn't locate that link — tap the map to place the pin yourself")}
+              : (resolveInfo || "couldn't locate that address — tap the map to place the pin yourself")}
           </span>
         </div>
       )}
@@ -686,7 +649,7 @@ function PlaceEditor({ folderId, place, folders, onClose, onSave, onDelete }) {
   const [subheading, setSubheading] = useState(place?.subheading || '');
   const [addr, setAddr] = useState(() => {
     const d = place?.addressData;
-    if (d && d.country) return { country: COUNTRIES[d.country] ? d.country : 'OTHER', fields: { ...emptyFields(), ...(d.fields || {}) }, coords: d.coords || null };
+    if (d && d.country) return { country: COUNTRIES[d.country] ? d.country : 'OTHER', fields: { ...emptyFields(), ...(d.fields || {}), postcode: String(d.fields?.postcode || '').toUpperCase() }, coords: d.coords || null };
     // older places only have one address string: keep it, on the first line
     const bias = getUserBias();
     return { country: bias?.cc ? codeForCc(bias.cc) : 'GB', fields: { ...emptyFields(), line1: place?.address || '' }, coords: null };
@@ -730,7 +693,7 @@ function PlaceEditor({ folderId, place, folders, onClose, onSave, onDelete }) {
           <input value={subheading} onChange={(e) => setSubheading(e.target.value)} placeholder="subheading" className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
           <AddressPicker value={addr} onChange={setAddr} onPickName={(n) => setName((cur) => cur.trim() ? cur : n)} />
           <div className="flex gap-2">
-            <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="google maps link" className="flex-1 px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
+            <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="link (optional)" className="flex-1 px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground" />
             {url && (
               <a href={url} target="_blank" rel="noopener noreferrer" className="touch-44 px-3 rounded-xl bg-muted flex items-center gap-1 text-xs font-medium lowercase">
                 <Link2 className="w-3.5 h-3.5" /> open
@@ -746,7 +709,7 @@ function PlaceEditor({ folderId, place, folders, onClose, onSave, onDelete }) {
               className="w-full px-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:border-foreground"
             />
             <p className="text-[11px] text-muted-foreground mt-1 px-1 lowercase leading-snug">
-              only needed if the link above doesn't auto-plot: in google maps, tap and hold the spot — the coordinates shown at the bottom can be copied straight in here. empty this box and save to remove a wrong pin.
+              only needed if the address doesn't plot where you want: in google maps, tap and hold the spot — the coordinates shown at the bottom can be copied straight in here. empty this box and save to remove a wrong pin.
             </p>
             {!isNew && place?.lat == null && !manualCoords && (
               <p className="text-[11px] text-destructive mt-1 px-1 lowercase">not plotted on the map yet</p>
