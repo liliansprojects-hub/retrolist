@@ -280,10 +280,11 @@ export async function resolveCoords({ url, address, country } = {}, { budgetMs =
   const parsed = link ? parseMapsUrl(link) : null;
 
   // 1. already in the link: instant, no network. A link that only carries a map-camera position
-  // (@lat,lng, no pin) is flagged approximate so the app asks the person to confirm the spot.
+  // (@lat,lng, no pin) is flagged approximate so the app asks the person to confirm the spot —
+  // that camera is wherever the viewer had panned to, not necessarily the place itself.
   if (parsed && parsed.lat != null) {
     const ranked = extractCoordsRanked(link);
-    return { lat: parsed.lat, lng: parsed.lng, source: 'link', approx: !!ranked && ranked.rank < 2 && !/\/maps\/place\//.test(link) };
+    return { lat: parsed.lat, lng: parsed.lng, source: 'link', approx: !!ranked && ranked.rank < 2 };
   }
 
   // 2. everything else starts at the same moment
