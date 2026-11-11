@@ -121,6 +121,11 @@ function popupContent(p) {
 
 // places at (almost) exactly the same point would sit on top of one another — fan them out a few
 // pixels so every pin stays visible and tappable
+// the fan-out only applies when zoomed in close; zoomed out, pins that are really that close
+// overlap exactly like the places they mark (full fan at zoom 16+, none at 14 and below)
+const fanScale = (m) => Math.min(1, Math.max(0, (m.getZoom() - 14) / 2));
+const scaledOffset = ([dx, dy], k) => [Math.round(dx * k), Math.round(dy * k)];
+
 function fanOffsets(places) {
   const groups = new Map();
   places.forEach((p) => { const k = Number(p.lat).toFixed(5) + ',' + Number(p.lng).toFixed(5); (groups.get(k) || groups.set(k, []).get(k)).push(p); });
@@ -139,6 +144,7 @@ const MapView = forwardRef(function MapView({ places = [], selectedId = null, on
   const readyRef = useRef(false);
   const queueRef = useRef([]);
   const markersRef = useRef(new Map()); // id -> { marker, el, sig }
+  const offsetsRef = useRef(new Map()); // id -> [dx, dy] full fan-out offset
   const popupRef = useRef(null);
   const meRef = useRef(null);
   const tiltRef = useRef(false);
@@ -265,6 +271,10 @@ const MapView = forwardRef(function MapView({ places = [], selectedId = null, on
 
     const setLabels = () => boxRef.current && boxRef.current.classList.toggle('rl-labels-on', map.getZoom() >= 12);
     map.on('zoom', setLabels);
+    map.on('zoom', () => {
+      const k = fanScale(map);
+      markersRef.current.forEach((entry, id) => entry.marker.setOffset(scaledOffset(offsetsRef.current.get(id) || [0, 0], k)));
+    });
     setLabels();
 
     map.on('click', (e) => {
@@ -303,12 +313,14 @@ const MapView = forwardRef(function MapView({ places = [], selectedId = null, on
     if (!m) return;
     const list = placesRef.current;
     const offsets = fanOffsets(list);
+    offsetsRef.current = offsets;
+    const k = fanScale(m);
     const seen = new Set();
     // southern pins sit lower on screen, so they are added last (on top)
     [...list].sort((a, b) => b.lat - a.lat).forEach((p) => {
       seen.add(p.id);
       const color = p.color || p.folderColor || '#111827';
-      const [dx, dy] = offsets.get(p.id) || [0, 0];
+      const [dx, dy] = scaledOffset(offsets.get(p.id) || [0, 0], k);
       const sig = `${color}|${p.name}`;
       const cur = markersRef.current.get(p.id);
       if (cur) {

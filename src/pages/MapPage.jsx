@@ -146,9 +146,9 @@ export default function MapPage() {
     if (!pendingFit.current) return;
     if (!mapSize.w || !mapSize.h) return;
     const pts = mappedPlaces.map((p) => [p.lat, p.lng]);
-    // 'all' / globe / map button: pull all the way out so the whole world is in
-    // frame — every pin, wherever it is on Earth, is then on screen at once
-    if (pendingFit.current === 'explicit' && (fitMode.current === 'world' || !pts.length)) {
+    // 'all' / globe / map button: zoom out only as far as needed to fit as many pins as possible
+    // (the whole world is shown only when there are no pins at all)
+    if (pendingFit.current === 'explicit' && !pts.length) {
       mapApi.current && mapApi.current.fit([], { world: true });
       pendingFit.current = false;
       return;

@@ -53,7 +53,7 @@ export default function AddressPicker({ value, onChange, onPickName }) {
   const lines = addressLines(country, fields);
 
   return (
-    <section className="space-y-3" aria-label="address">
+    <section className="rounded-2xl border border-border p-3 space-y-3" aria-label="address">
       <div className="flex items-center justify-between">
         <h4 className="text-xs font-medium text-muted-foreground lowercase">address</h4>
         {(hasAny || coords) && (
@@ -83,7 +83,7 @@ export default function AddressPicker({ value, onChange, onPickName }) {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={country === 'OTHER' ? 'find an address, place or postcode' : `find a postcode, place or address${cfg.postcodeHint ? ` (${cfg.postcodeHint.replace('e.g. ', '')})` : ''}`}
+          placeholder="find a postcode, place or address"
           className={cn(field, 'pl-9 pr-9')}
           autoComplete="off"
           enterKeyHint="search"
