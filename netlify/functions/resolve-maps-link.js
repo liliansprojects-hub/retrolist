@@ -60,7 +60,7 @@ async function timedFetch(url, deadline, opts = {}) {
 async function resolve(startUrl, deadline) {
   let current = startUrl;
   let best = null; // the most trustworthy coordinates seen anywhere along the chain
-  const note = (c, from) => { if (c && (!best || c.rank > best.rank)) best = { ...c, finalUrl: from }; };
+  const note = (c, from, fromPage = false) => { if (c && (!best || c.rank > best.rank)) best = { ...c, finalUrl: from, fromPage }; };
 
   for (let hop = 0; hop < 8 && remaining(deadline) > 0; hop++) {
     note(extractCoordsRanked(current), current);
@@ -86,14 +86,17 @@ async function resolve(startUrl, deadline) {
     let text = '';
     try { text = await res.text(); } catch { /* ignore */ }
     const og = /\/maps\/place\//.test(current) && !/consent\.google/.test(current) ? ogImageCenter(text) : null;
-    if (og && !isDefaultSpot(og)) note({ ...og, rank: best && best.rank >= 2 ? best.rank - 0.5 : 2 }, current);
+    if (og && !isDefaultSpot(og)) note({ ...og, rank: best && best.rank >= 2 ? best.rank - 0.5 : 2 }, current, true); // page content is tailored to THIS SERVER's location
     break;
   }
 
   if (best) {
-    // a bare map-camera position (rank 1) is only believable on a real place page
-    const onPlacePage = /\/maps\/place\//.test(best.finalUrl || current) && !/consent\.google/.test(best.finalUrl || current);
-    return found(best, best.finalUrl || current, best.rank < 2 && !onPlacePage);
+    // Google picks the place (and the camera) for name-only links from the requesting server's
+  // location — Netlify functions run in Ohio by default — so anything read from the page, or a bare
+  // camera position, is only a guess. Only the exact pin (!3d!4d) or coordinates written in the
+  // link itself are trusted; the rest is flagged approx and the app asks the person to tap the spot.
+  const trusted = best.rank >= 3 || (best.rank >= 2 && !best.fromPage);
+  return found(best, best.finalUrl || current, !trusted);
   }
 
   // No exact coordinates anywhere. Do NOT guess by searching the name here: a name

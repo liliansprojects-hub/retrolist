@@ -59,8 +59,7 @@ export default function ItemRow({ item, folderType, onUpdate, onOpen }) {
       className={cn(
         'relative rounded-2xl overflow-hidden transition-all flex items-center',
         padY, minH,
-        !hasColor && 'border border-border',
-        (tipLeft || tipRight) && 'shadow-[0_1px_3px_rgba(0,0,0,0.10)]'
+        !isFull && 'border border-border'
       )}
       style={bg}
     >

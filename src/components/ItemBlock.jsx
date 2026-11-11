@@ -34,7 +34,7 @@ export default function ItemBlock({ folder, onClick, onMenu, onToggle }) {
   return (
     <button
       onClick={onClick}
-      className={cn('card-no-select group relative block rounded-2xl overflow-hidden active:scale-95 transition-transform text-left w-full h-full', !hasColor && 'border border-border', !isFull && 'bg-card') /* solid neutral fill: never see-through, even mid-drag */}
+      className={cn('card-no-select group relative block rounded-2xl overflow-hidden active:scale-95 transition-transform text-left w-full h-full', !isFull && 'border border-border', !isFull && 'bg-card') /* solid neutral fill: never see-through, even mid-drag */}
       style={bg}
     >
       {tipLeft && <span className="absolute top-0 bottom-0 left-0 rounded-r-2xl" style={{ width: '5%', backgroundColor: item.color }} />}

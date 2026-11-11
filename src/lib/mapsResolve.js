@@ -15,6 +15,8 @@
 //     and the free CORS proxies that used to get around it now block
 //     production sites. So our own Netlify function is tried first.
 
+import { getUserBias } from '@/lib/userBias';
+
 const FUNCTION_PATH = '/.netlify/functions/resolve-maps-link';
 const NUM = '-?\\d{1,3}\\.\\d+';
 
@@ -178,32 +180,56 @@ const norm = (str) => String(str || '').normalize('NFD').replace(/[\u0300-\u036f
 const words = (str) => (norm(str).match(/[\p{L}\p{N}]+/gu) || []).filter((w) => w.length >= 3 || /\d/.test(w));
 const GENERIC = new Set(['the', 'and', 'for', 'near', 'unnamed', 'place', 'new', 'untitled', 'unknown']);
 
-export function resultMatchesQuery(query, result) {
+// `strict` (used for searches with no local bias) demands EVERY meaningful word, not just half:
+// "high street" must not be satisfied by any "High Street" on Earth, and "cafe nero high street"
+// must not be satisfied by one of the three words.
+export function resultMatchesQuery(query, result, { strict = false } = {}) {
   const q = words(query).filter((w) => !GENERIC.has(w));
   if (!q.length) return false;
   const hay = norm(`${result?.display_name || ''} ${result?.name || ''}`);
   const hits = q.filter((w) => hay.includes(w)).length;
-  return hits >= Math.ceil(q.length / 2);
+  return strict ? hits === q.length : hits >= Math.ceil(q.length / 2);
 }
 
-export async function geocode(query, { fetch: fetchFn = defaultFetch, ms = 2500 } = {}) {
-  if (!query || !String(query).trim()) return null;
-  const q = String(query).trim();
+const NOMINATIM = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&accept-language=en';
+
+async function nominatimSearch(fetchFn, q, extra, ms, strict) {
   try {
-    const res = await fetchWithTimeout(
-      fetchFn,
-      `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=${encodeURIComponent(q)}`,
-      {},
-      ms,
-    );
+    const res = await fetchWithTimeout(fetchFn, `${NOMINATIM}&q=${encodeURIComponent(q)}${extra}`, {}, ms);
     const data = await res.json();
     if (Array.isArray(data)) {
       // first result that genuinely matches the query (Nominatim's own ranking is kept)
-      const hit = data.find((r) => resultMatchesQuery(q, r));
+      const hit = data.find((r) => resultMatchesQuery(q, r, { strict }));
       if (hit) return pair(hit.lat, hit.lon);
     }
   } catch { /* offline, blocked or timed out — treated as "not found" */ }
   return null;
+}
+
+// Searched near the person FIRST: restricted to their country (when known) and ranked by a box
+// around where they are. Only when that finds nothing does the worldwide search count — and that
+// one has to match every word, so a vague address can't be answered by a random place abroad
+// (the old behaviour: pins in Ohio). Both searches start together; the local answer wins.
+export async function geocode(query, { fetch: fetchFn = defaultFetch, ms = 2500 } = {}) {
+  if (!query || !String(query).trim()) return null;
+  const q = String(query).trim();
+  const bias = getUserBias();
+  let local = Promise.resolve(null);
+  // no remembered position yet (first run, location never allowed): fall back to the country of
+  // the device's language setting, e.g. en-GB -> gb. Only a hint — the strict worldwide search
+  // below still runs if nothing turns up there.
+  const localeCc = !bias && typeof navigator !== 'undefined'
+    ? ((navigator.languages || [navigator.language]).map((l) => String(l || '').split('-')[1]).find((r) => r && r.length === 2) || '').toLowerCase()
+    : '';
+  if (!bias && localeCc) local = nominatimSearch(fetchFn, q, `&countrycodes=${localeCc}`, ms, false);
+  if (bias) {
+    const d = 1.5; // degrees — roughly 100-150 km each way
+    const box = `&viewbox=${(bias.lng - d).toFixed(4)},${(bias.lat + d).toFixed(4)},${(bias.lng + d).toFixed(4)},${(bias.lat - d).toFixed(4)}`;
+    const cc = bias.cc ? `&countrycodes=${bias.cc}` : '';
+    local = nominatimSearch(fetchFn, q, `${box}${cc}`, ms, false);
+  }
+  const world = nominatimSearch(fetchFn, q, '', ms, true);
+  return (await local) || (await world);
 }
 
 // a place name the resolver found in an unresolvable link — only ever offered as a search SUGGESTION, never plotted

@@ -1,6 +1,7 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { rememberUserPosition } from '@/lib/userBias';
 
 // The in-app map. Replaces pigeon-maps (flat OpenStreetMap raster tiles, no building shapes,
 // choppy zooming) with MapLibre GL: a vector map that zooms smoothly, draws building footprints
@@ -195,6 +196,7 @@ const MapView = forwardRef(function MapView({ places = [], selectedId = null, on
       navigator.geolocation.getCurrentPosition(
         (pos) => whenReady((m) => {
           const c = [pos.coords.longitude, pos.coords.latitude];
+          rememberUserPosition(pos.coords.latitude, pos.coords.longitude); // so address searches favour where you are
           if (!meRef.current) meRef.current = new maplibregl.Marker({ element: el('div', 'rl-me') }).setLngLat(c).addTo(m);
           else meRef.current.setLngLat(c);
           m.flyTo({ center: c, zoom: 15.5, duration: 900 });

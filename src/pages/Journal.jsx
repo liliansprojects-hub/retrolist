@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  ChevronLeft, ChevronRight, Plus, X, Droplet, MapPin, Trash2, Pencil,
+  ChevronLeft, ChevronRight, ChevronDown, Plus, X, Droplet, MapPin, Trash2, Pencil,
 } from 'lucide-react';
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval,
@@ -123,44 +123,56 @@ export default function Journal() {
         }}
       />
 
-      {/* month + year filter (narrowed) */}
-      <div className="flex items-center justify-between mb-4 gap-3">
-        <div className="flex gap-1.5 items-center">
-          <select
-            value={month.getMonth()}
-            onChange={(e) => setMonth(setMonthOf(month, parseInt(e.target.value)))}
-            className="px-2.5 py-1.5 rounded-xl bg-muted text-xs font-semibold lowercase outline-none focus:ring-1 focus:ring-foreground"
-          >
-            {Array.from({ length: 12 }, (_, i) => (
-              <option key={i} value={i}>{format(new Date(2000, i, 1), 'MMMM').toLowerCase()}</option>
-            ))}
-          </select>
-          <select
-            value={month.getFullYear()}
-            onChange={(e) => setMonth(setYearOf(month, parseInt(e.target.value)))}
-            className="px-2.5 py-1.5 rounded-xl bg-muted text-xs font-semibold outline-none focus:ring-1 focus:ring-foreground"
-          >
-            {yearOptions.map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
+      {/* month + year filter: one row spanning the same width as the calendar grid below it
+          (selects share the free space, nav buttons sit flush right), so nothing is left over on
+          either side. The native dropdown arrow is replaced by our own chevron, inset from the edge. */}
+      <div className="flex items-center mb-4 gap-2 w-full">
+        <div className="flex flex-1 min-w-0 gap-1.5 items-center">
+          <div className="relative flex-1 min-w-0">
+            <select
+              value={month.getMonth()}
+              onChange={(e) => setMonth(setMonthOf(month, parseInt(e.target.value)))}
+              aria-label="month"
+              className="w-full appearance-none pl-3.5 pr-9 py-2 rounded-xl bg-muted text-xs font-semibold lowercase outline-none focus:ring-1 focus:ring-foreground"
+            >
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={i} value={i}>{format(new Date(2000, i, 1), 'MMMM').toLowerCase()}</option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+          </div>
+          <div className="relative flex-1 min-w-0">
+            <select
+              value={month.getFullYear()}
+              onChange={(e) => setMonth(setYearOf(month, parseInt(e.target.value)))}
+              aria-label="year"
+              className="w-full appearance-none pl-3.5 pr-9 py-2 rounded-xl bg-muted text-xs font-semibold outline-none focus:ring-1 focus:ring-foreground"
+            >
+              {yearOptions.map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+          </div>
         </div>
-        <div className="flex gap-1.5 mr-6">
+        <div className="flex gap-1.5 shrink-0 items-center">
           <button
             onClick={() => setMonth(subMonths(month, 1))}
-            className="touch-44 w-7 h-7 rounded-full bg-muted flex items-center justify-center"
+            className="touch-44 w-8 h-8 rounded-full bg-muted flex items-center justify-center"
+            aria-label="previous month"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => setMonth(new Date())}
-            className="touch-44 px-2 h-7 rounded-full bg-muted flex items-center justify-center text-[10px] font-medium lowercase"
+            className="touch-44 px-3 h-8 rounded-full bg-muted flex items-center justify-center text-[10px] font-medium lowercase"
           >
             today
           </button>
           <button
             onClick={() => setMonth(addMonths(month, 1))}
-            className="touch-44 w-7 h-7 rounded-full bg-muted flex items-center justify-center"
+            className="touch-44 w-8 h-8 rounded-full bg-muted flex items-center justify-center"
+            aria-label="next month"
           >
             <ChevronRight className="w-3.5 h-3.5" />
           </button>

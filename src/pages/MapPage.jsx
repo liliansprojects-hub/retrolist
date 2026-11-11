@@ -10,6 +10,7 @@ import ColorPicker from '@/components/ColorPicker';
 import { useSync } from '@/lib/SyncContext';
 import { cn } from '@/lib/utils';
 import { resolveCoords, parseManualCoords, geocode, getLastHint } from '@/lib/mapsResolve';
+import { primeUserBias } from '@/lib/userBias';
 import { WifiOff } from 'lucide-react';
 
 // MAP LIBRARY: MapLibre GL (see @/components/MapView) — vector tiles with building shapes, smooth
@@ -70,6 +71,10 @@ export default function MapPage() {
   const [mapSize, setMapSize] = useState({ w: 0, h: 0 });
 
   const refresh = () => setFolders(getMapFolders());
+
+  // learn roughly where the person is (silent — only if location is already allowed) so that
+  // typed addresses are searched near them first instead of anywhere on Earth
+  useEffect(() => { primeUserBias(); }, []);
 
   useEffect(() => {
     refresh();
