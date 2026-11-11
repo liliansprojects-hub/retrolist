@@ -59,6 +59,7 @@ export function addressLines(country, fields) {
   const c = COUNTRIES[country] || COUNTRIES.OTHER;
   const v = fields || {};
   const lines = c.lines(v).map((x) => String(x || '').trim()).filter(Boolean);
+  if (!lines.length && country !== 'OTHER') return []; // only the country is set: that is not an address
   const countryName = country === 'OTHER' ? String(v.countryName || '').trim() : c.name;
   if (countryName) lines.push(countryName);
   return lines;

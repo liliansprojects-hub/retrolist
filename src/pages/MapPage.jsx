@@ -23,6 +23,7 @@ import { WifiOff } from 'lucide-react';
 // places the background sweep has already tried to locate this session, so an
 // unlocatable one isn't re-queried (and re-waited-on) every time the page opens
 const sweepTried = new Set();
+const isCountryOnly = (addr) => { const t = String(addr || '').trim().toLowerCase(); return !!t && Object.values(COUNTRIES).some((c) => c.name && c.name === t); };
 
 const folderColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 
@@ -94,6 +95,12 @@ export default function MapPage() {
       let changed = false;
       for (const folder of folders) {
         for (const place of folder.places || []) {
+          // an earlier version saved just the country name as an address and plotted it in the middle of
+          // the country: drop those pins and never search them again
+          if (isCountryOnly(place.address) && place.coordSource !== 'manual') {
+            if (place.lat != null) { place.lat = null; place.lng = null; changed = true; }
+            continue;
+          }
           if (place.lat) continue;
           if (!place.address) continue;
           if (sweepTried.has(place.id)) continue; // already tried this session

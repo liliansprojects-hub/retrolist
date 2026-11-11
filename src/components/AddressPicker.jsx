@@ -59,7 +59,7 @@ export default function AddressPicker({ value, onChange, onPickName }) {
   return (
     <section className="font-body rounded-2xl border border-border p-4 space-y-4 text-sm" aria-label="address">
       <div className="flex items-center justify-between px-1">
-        <h4 className="text-base font-semibold lowercase">address</h4>
+        <h4 className="text-sm font-medium text-muted-foreground lowercase">address</h4>
         {(hasAny || coords) && (
           <button type="button" onClick={clear} className="touch-44 text-sm text-muted-foreground lowercase flex items-center gap-1"><X className="w-3.5 h-3.5" /> clear</button>
         )}
